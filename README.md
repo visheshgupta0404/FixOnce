@@ -2,144 +2,283 @@
 
 **Every incident, fixed only once.** An on-call teammate that remembers.
 
-When a service breaks at 3 AM, FixOnce tells the engineer on call, in plain words, what happened last
-time, what fixed it, what made it worse, and offers the safe fix as one tap. Every incident becomes a
-lesson in [Meko](https://mekodata.ai), so the next one is faster. Switch Meko off and FixOnce goes
-back to guessing: that difference is the product.
+At 3 AM, the junior engineer on call should not have to rediscover yesterday's fix. FixOnce
+shows what happened last time, what worked, what made it worse, and a suggested action to approve.
+Lessons live in [Meko](https://mekodata.ai), ready for the next incident and the next shift.
 
-Built at hackCBS 9.0 for the Meko challenge (Track A).
+Built at **hackCBS 9.0 · Meko challenge · Track A**.
 
-**FixOnce is a pip package, not a hosted service.** Companies install it and run it inside their own
-infrastructure, next to the service it watches. There is no FixOnce server: incident data goes only
-to the Meko datapack and the LLM key the company configures itself, and log lines are redacted first.
-See [Use it in your company](#use-it-in-your-company-pip-package).
+[Quick start](#quick-start) · [Five-minute demo](#five-minute-demo) · [How Meko is used](#how-meko-is-used-and-why) · [Use your own service](#use-your-own-service) · [Meko feature proposal](docs/feature-proposal.md)
 
-## Problem
+![FixOnce: service health, team memory, recalled evidence and an Apply fix button](docs/ui/laptop-light.png)
 
-Most outages are repeats. The fix exists, but it lives in someone's head or an old chat thread,
-and the junior on call starts from zero. Worse, nobody writes down what made things worse, so the
-same wrong step gets tried again.
+*Captured from the local simulation using the clearly labelled offline stand-in, not real Meko.*
+[Phone view](docs/ui/phone-light.png) · [Dark theme](docs/ui/laptop-dark.png) · [OFF vs ON comparison](docs/ui/comparison.png)
 
-## Run it (5 commands)
+## Why it exists
 
-Needs only Git and Docker (Docker Desktop running on Windows/macOS). Works the same in bash and PowerShell.
+Repeated outages often come with a familiar problem: the fix lives in someone's head or an old
+chat thread. The person on call starts from zero, including repeating steps that made things worse.
+FixOnce puts that experience beside the next decision, with the recalled text visible and a human
+in control of applying the fix.
+
+**It runs on your infrastructure.** FixOnce is a Python package with a local web page, not a
+FixOnce-hosted service. You choose the watched service, Meko datapack, Gemini key and optional
+notification destination. Log messages are masked before agents read them; see [Data and privacy](#data-and-privacy).
+
+## The difference memory makes
+
+The same **DB connections simulation**, observed in our offline smoke test:
+
+| | Memory OFF | Memory ON |
+| --- | --- | --- |
+| Context | No incident history | Seeded development lesson recalled |
+| Action | Raises the connection pool, restarts, then adds replicas | Pauses the export job |
+| Tries | 3 unsuccessful attempts | 1 successful attempt |
+| Outcome | Handed to a senior | Fixed |
+
+This is a reproducible development scenario, not a production benchmark or a real-Meko performance
+claim. The real-Meko demo uses lessons returned by Meko. The page shows actual attempts and time to
+fix; no example timings are filled in. Model-generated proposals may differ from the built-in rules.
+
+## Quick start
+
+Choose an offline walkthrough or a real-Meko demo. Both Docker paths need **Git and Docker Compose**
+(with Docker Desktop running on Windows/macOS). Run these commands from a new clone; `cp` works in
+bash and PowerShell. In an existing checkout, keep your current `.env` instead of overwriting it.
+
+### Offline walkthrough — no keys
 
 ```bash
 git clone https://github.com/visheshgupta0404/FixOnce.git
 cd FixOnce
-cp .env.example .env          # add MEKO_API_KEY, MEKO_DATAPACK_ID, GEMINI_API_KEY
+cp .env.example .env
 docker compose up --build -d
-docker compose exec backend python -m fixonce.seed   # seeded demo history, written into Meko (once per datapack)
 ```
 
-Open http://localhost:8000. With no keys in `.env`, it runs offline with a fake memory and a
-rule-based model (for development only; the demo uses real Meko and Gemini). `GET /api/status`
-says which one is running.
+Leave the API keys empty. Open [localhost:8000](http://localhost:8000). The page should say
+**Offline stand-in, not Meko** and **Built-in rules**. Seeded history is loaded automatically in
+offline demo mode. This mode is for development, not evidence of a live Meko integration.
 
-On a slow network the first build can take 15+ minutes; if pip times out, run
-`docker compose up --build -d` again and it resumes from the wheels it already downloaded.
+### Real Meko + Gemini demo — five commands
 
-Only port 8000 is published. The demo shop listens on 127.0.0.1:8001 for debugging.
+```bash
+git clone https://github.com/visheshgupta0404/FixOnce.git
+cd FixOnce
+cp .env.example .env
+docker compose up --build -d
+docker compose exec backend python -m fixonce.seed
+```
 
-Without Docker, from the package: `pip install "./backend[gemini]"`, then `fixonce demo` (page, agents and
-the demo shop in one process; it reads `.env` from the current folder).
+**Before the fourth command**, edit `.env` and fill in:
 
-Between demo runs: `scripts/demo_reset.sh` (shop healthy, incidents cleared, Meko OFF; lessons in
-Meko are kept). `scripts/demo_smoke.sh` runs the Meko OFF vs ON flow through the API and prints PASS.
-Both take `FIXONCE_URL=<url>` to point at the hosted copy.
+| Setting | Value |
+| --- | --- |
+| `MEKO_API_KEY` | Your Meko API key |
+| `MEKO_DATAPACK_ID` | A dedicated product/demo datapack; never the team's `fixonce-build` datapack |
+| `GEMINI_API_KEY` | Your Gemini API key |
 
-Free hosting (Render): New > Blueprint > this repo, enter the three keys when asked. `render.yaml`
-uses the one-container `Dockerfile` at the root (the shop runs inside the backend process).
-Free instances sleep after 15 idle minutes, so point a free uptime monitor at `/api/status`.
+Seed once per demo datapack. It writes clearly marked **seeded demo history** into Meko; use a demo
+datapack rather than seeding a real service's knowledge. Open [localhost:8000](http://localhost:8000)
+and check for **Real Meko**, **Gemini**, and any fallback or pending-save warnings.
+`GET /api/status` reports the running modes. Keep `.env` out of Git.
 
-## Try it
+### Without Docker
 
-1. Turn Meko **OFF**, press **Break: DB connections**, tap Apply. The agent raises the pool size,
-   which makes things worse, then gives up after three tries.
-2. Press **Reset demo**, turn Meko **ON**, break it again. FixOnce recalls the past incident,
-   avoids the steps that made it worse, and pauses the export job. Fixed first time.
-3. In the recall panel, see exactly what Meko returned and stored. Correct or forget the new lesson,
-   then promote it: it joins the shared team knowledge panel and is locked from then on.
-4. Look at the orange card: **This is the 3rd time**. FixOnce counts the past incidents of this kind in
-   Meko, names the root cause from those lessons, and suggests the permanent fix. Tap **Create follow-up**:
-   it is stored in Meko, listed under Open follow-ups, and the next repeat says it is still not done.
-   "Every incident, fixed only once" means the quick fix stops being a habit.
-5. Scroll to **What left this machine**: every request that went to Meko and to Gemini, and the
-   customer emails and IPs masked in the logs before anything was sent. Nothing else leaves.
+Requires **Python 3.11+**. From the repository root, preferably inside a virtual environment:
+
+```bash
+python -m pip install "./backend[gemini]"
+fixonce demo --env-file none
+```
+
+This runs the page, agents and simulated shop in one process. `--env-file none` skips the repository's
+`.env`; it does **not** clear variables already exported in your shell. For an offline run, use a
+shell without Meko, Gemini or webhook credentials configured. Use `fixonce demo` to read your `.env`.
+If the `fixonce` command is not on PATH, use `python -m fixonce.cli demo --env-file none`.
+
+## Five-minute demo
+
+All Break and Sale controls are labelled **simulation** and only appear for a compatible demo target.
+
+1. **Run without history.** Turn team memory **OFF**, choose **Break: DB connections**, and tap
+   **Apply fix** each time a proposal appears. Wait for each check. With the built-in rules,
+   three unsuccessful tries end in **Handed to a senior**.
+2. **Run with history.** Press **Reset demo**, turn memory **ON**, and break DB connections again.
+   Inspect the recalled lesson and the steps that made things worse. Apply the proposed fix and
+   wait until the server confirms the result. Applying normally includes an approximately
+   eight-second check; a healthy metric alone is not the final outcome.
+3. **Compare the results.** The OFF vs ON strip pairs finished incidents with the same pattern
+   observed by this page. Keep the page open between runs: Reset clears server incidents but keeps
+   this page's comparison; reloading clears the comparison. Displayed times include time spent
+   waiting for human approval.
+4. **Review what was learned.** Wait for the new stored lesson. Tap **Correct**, edit inline and
+   save. Then select **Fix held: share with team**. It appears in **Shared team knowledge** on the
+   next refresh and becomes locked. To demonstrate **Forget**, use another fresh, unpromoted
+   lesson; do not forget the lesson you intend to promote.
+5. **Look for repeats.** When Meko returns enough matching past lessons, the orange repeat card
+   shows the observed count, root cause and proposed permanent fix. Select **Create follow-up**
+   to save that work in Meko. Open follow-ups remain visible on subsequent matching incidents;
+   the quick fix and the permanent fix are separate decisions.
+6. **Inspect the evidence.** Open **What left this machine** for destination counts, masking and
+   request logs; inspect **Every Meko call** for operations and results. Ask **What happened last
+   night?** to get a summary from the history available to this instance.
+
+**Reset keeps lessons.** Wait for a lesson to finish saving before resetting. The reset script also
+turns memory OFF by default; the page's Reset button leaves the switch as it was.
 
 ## How Meko is used (and why)
 
 | Meko use | In FixOnce | Why |
 | --- | --- | --- |
-| Recall before reasoning | The Recall agent calls `context_search` and `knowledgebase_search` before the LLM sees the incident | The past fix and the failed steps are in front of the agent from the first step |
-| Extracted memories | The Scribe saves each incident as a lesson with `memory_add`; the on-call can correct or forget it | The next on-call needs the lesson, not the raw logs |
-| Promotion to shared knowledge | After a human confirms the fix held, `memory_promote`. Promotion is one-way in Meko, so a promoted lesson is shown as locked | Only verified fixes become team knowledge |
-| Sharing across agents and users | Four agents and every teammate's agents read promoted lessons | The morning shift gets the night shift's lessons |
-| Documents | Postmortems saved with `artifact_put`; decision traces with `conversation_add_message` | Every choice can be explained later |
-| Patterns across incidents | Recall counts the past lessons of the same kind (private and promoted) and reads the root cause from them; a follow-up for the permanent fix is a Meko memory that recall finds on the next repeat | A repeat should push the team to fix the cause, not just apply the quick fix faster |
+| Recall before reasoning | Recall calls `context_search` and `knowledgebase_search` before a fix proposal | Past fixes and failed steps inform the next decision |
+| Extracted memories | Scribe saves an incident lesson with `memory_add` | The next shift needs the lesson, not a pile of logs |
+| Promotion to shared knowledge | A human confirms the fix held, then `memory_promote` shares it | Verified lessons become team knowledge |
+| Sharing across agents and users | Agents and teammates with datapack access can recall promoted lessons | Experience survives the handoff |
+| Patterns across incidents | Recall counts matching past incident lessons and reads root causes; permanent-fix follow-ups are stored in Meko and recalled on a repeat | Repeated incidents should lead to fixing the cause, not just repeating a quick fix |
+| Documents and decision traces | `artifact_put` stores postmortems; `conversation_add_message` records decisions | Engineers can inspect how a decision was made |
 
-Everything shown as memory in the UI came back from a real Meko call (see "Every Meko call").
-The chaos buttons and the shop are a labelled simulation. No personal data is stored.
+In real mode, the memory panel displays the text returned by Meko. Offline mode is explicitly
+labelled as a stand-in. Seeded history is marked. Recalled items show their source and match
+strength; a match is evidence to review, not a guarantee. Correct and Forget work on unpromoted
+stored lessons; promoted lessons are locked by the current Meko integration.
 
-## Use it in your company (pip package)
+Our [Meko feature proposal](docs/feature-proposal.md) describes the friction we encountered with
+promoted knowledge and proposes revisions, retraction and version-aware recall.
 
-Most companies will not send production incidents to a third-party app. So FixOnce ships as a
-package that runs on their own machines; nothing goes through us.
+## How it works
 
-```bash
-pip install "fixonce[gemini] @ git+https://github.com/visheshgupta0404/FixOnce.git#subdirectory=backend"
-fixonce serve --target http://payments.internal:9000      # any service with 4 small endpoints
-fixonce serve --target mycompany.fixonce_target:Payments   # ...or a Python adapter object
+```mermaid
+flowchart LR
+    Service[Your service] --> Watch[Detect a problem]
+    Watch --> Triage[Explain what broke]
+    Triage --> Recall[Recall lessons from Meko]
+    Recall --> Fixer[Propose an allowed fix]
+    Fixer --> Human{Human decision}
+    Human -->|Apply| Check[Run action and check recovery]
+    Human -->|Escalate| Senior[Hand to a senior]
+    Check --> Scribe[Save the outcome and lesson]
+    Senior --> Scribe
+    Scribe --> Meko[(Your Meko datapack)]
+    Meko --> Recall
 ```
 
-Or embed it in your own Python app:
+The fixer proposes only names from the configured action catalog. A human approves before an
+action runs. Team rules can block an action; outdated recalled versions are flagged for review.
+
+## Use your own service
+
+Install from Git; the package is not published to PyPI yet:
+
+```bash
+python -m pip install "fixonce[gemini] @ git+https://github.com/visheshgupta0404/FixOnce.git#subdirectory=backend"
+fixonce serve --target http://payments.internal:9000
+```
+
+Your service or sidecar provides four routes: `GET /metrics`, `GET /logs`, `GET /deploys`, and
+`POST /actions/{name}`. Alternatively, supply a Python adapter:
+
+```bash
+fixonce serve --target examples.payments_target:Payments
+```
+
+Run that example from the repo root; see [the complete adapter](examples/payments_target.py).
+You can also embed the page and API in your own Python application:
 
 ```python
 import fixonce
+from examples.payments_target import Payments
 
-class Payments:                      # four async methods over your own service
-    actions = {"drain_queue": "Drain the stuck payout queue", "flush_cache": "Flush the rates cache"}
-    async def metrics(self): ...     # {"service", "version", "error_rate"}
-    async def logs(self, limit=20): ...   # [{"level", "msg"}]
-    async def deploys(self): ...     # {"current", "previous"}
-    async def run_action(self, name): ... # only names from `actions` are ever passed
-
-app = fixonce.create_app(target=Payments())   # FastAPI app: API + on-call page; run with uvicorn
+app = fixonce.create_app(target=Payments())  # FastAPI app; serve with an ASGI server
 ```
 
-| Data | Where it goes |
+`serve` disables demo mode by default. Run one instance per target. The [package guide](docs/package.md)
+has the full target contract, action catalog, team rules and settings.
+
+## Data and privacy
+
+| Data | Destination |
 | --- | --- |
-| Metrics, logs, deploys | Read in your process. Emails, IPs, secrets, card and phone numbers are masked before any agent sees them (`FIXONCE_REDACT`, on by default) |
-| Lessons, postmortems, decision traces | Your own Meko datapack, with your own key (`MEKO_API_KEY`, `MEKO_DATAPACK_ID`). Switch Meko off and nothing is stored |
-| Prompts | Your own Gemini key, or none: without `GEMINI_API_KEY` the agents use built-in rules and nothing goes to an LLM |
-| Anything else | Nowhere. The package has no telemetry and no FixOnce server |
+| Service metrics, logs and deploys | Read from your configured target. Supported sensitive patterns in log `msg` fields are masked in-process before agents read them when `FIXONCE_REDACT=true` (default) |
+| Lessons, postmortems and decision traces | Your configured Meko datapack, using your key, when memory is enabled |
+| Model prompts | Gemini using your key, when configured; otherwise built-in rules run locally |
+| Incident notifications | Your optional Telegram bot (`TELEGRAM_BOT_TOKEN`, sent to api.telegram.org from your process) and/or `FIXONCE_WEBHOOK_URL`, including incident summaries and outcomes |
+| Page assets | Served by your FixOnce instance; no CDN, external fonts or outside images |
 
-The agents only ever propose an action from your `actions` list, and a human taps Apply before it runs.
-The page's **What left this machine** panel lists every request to Meko and the LLM as it happens.
-A complete adapter to copy: [examples/payments_target.py](examples/payments_target.py)
-(`fixonce serve --target examples.payments_target:Payments` from the repo root).
-Alerts: set `TELEGRAM_BOT_TOKEN` and the on-call gets every incident step on Telegram, sent straight
-from this process ([docs/telegram.md](docs/telegram.md)); `FIXONCE_WEBHOOK_URL` posts the same events as
-JSON for Slack, email or a pager.
-Details, the HTTP contract and every setting: [docs/package.md](docs/package.md).
+There is no FixOnce-operated backend or package telemetry. **Self-hosted does not mean all data stays
+local:** configured Meko, Gemini, Telegram, HTTP targets and webhooks can be external destinations. Turning
+Meko OFF disables memory use; it does not disable Gemini or notifications.
 
-## Architecture
+Masking covers supported email, IP, secret, card and phone patterns in log messages. It is not a
+guarantee that arbitrary incident text contains no sensitive data. Review your adapter, inputs and
+destinations before connecting a real service. The demo's customer emails and IPs are made up.
 
-All code is one Python package, `backend/fixonce` (`pip install ./backend`):
+The **What left this machine** panel lists instrumented Meko, Gemini, Telegram and webhook requests, masking
+counts and the last masked log line. It is an application audit view, not a network packet capture.
+Telegram alerts need only a bot token ([Telegram guide](docs/telegram.md)); webhook alerts can be signed using
+`FIXONCE_WEBHOOK_SECRET`.
 
-- `fixonce/target.py`: the service being watched (HTTP or Python adapter); `redact.py` masks logs
-- `fixonce/agents/`: four agents (triage, recall, fixer, scribe); `memory/`: Meko over MCP; Gemini in `llm.py`
-- `fixonce/main.py` + `fixonce/web/index.html`: API and the page the on-call engineer uses
-- `fixonce/demo/shop.py`: the demo shop simulation that can break three ways
-- `fixonce/cli.py`: the `fixonce` command (`demo`, `serve`, `seed`, `check`)
+## Checks and troubleshooting
 
-## Slides and team
-
-- Slides: _add link_
-- Team: Vedansh Mathur, Vishal Verma, Vishesh Gupta
-
-## Tests
+Run tests from `backend/`:
 
 ```bash
-cd backend && pip install -e ".[dev]" && python -m pytest -q
+python -m pip install -e ".[dev]"
+python -m pytest -q
 ```
+
+With a demo already running, use bash (Git Bash on Windows) from the repo root:
+
+```bash
+bash scripts/demo_smoke.sh
+bash scripts/demo_reset.sh
+```
+
+The smoke script changes demo state, runs OFF vs ON and prints `PASS` when the expected scenario
+holds. Point it at a demo instance, not a real target. Both scripts accept `FIXONCE_URL`; reset
+keeps lessons and defaults to memory OFF. For example in bash:
+`FIXONCE_URL=http://localhost:8000 bash scripts/demo_reset.sh on`.
+
+| Symptom | What to check |
+| --- | --- |
+| Page will not open | Confirm the process or containers are running. For Docker, inspect `docker compose ps` and `docker compose logs backend`. The page uses port 8000 |
+| Offline label when real Meko was expected | Check `.env` key names and the product datapack ID; recreate containers after changing environment values (`docker compose up -d --force-recreate`) |
+| Gemini unavailable warning | Inspect the warning details and configured model/key. Built-in rules may answer while Gemini is unavailable; the page reports the fallback |
+| Saves waiting / memory unavailable | Check Meko connectivity and datapack access. Inspect the Meko call feed; wait for saves to finish before resetting |
+| No matching history | Confirm you seeded the dedicated demo datapack once, memory is ON, and recall calls succeeded |
+| Correct or Forget is missing | Promoted lessons are locked. Demonstrate those actions on a fresh lesson before promotion |
+| First Docker build fails while downloading | Check the connection and retry the build. Download/build time depends on your machine and network |
+
+Docker Compose exposes the page on port 8000 and binds the simulated shop's debug port 8001 to
+localhost only. For deployment, the root [Dockerfile](Dockerfile) and [Render blueprint](render.yaml)
+run the in-process demo shop. Configure credentials privately and check your hosting provider's
+current settings before a demo.
+
+## Current limits
+
+- Incident history is in process memory: restarting loses incident records; Reset clears them.
+  Real-mode lessons already saved to Meko remain there. Offline stand-in memory is lost on restart.
+- The OFF/ON comparison is limited to finished incidents observed in the current browser session.
+- Promoted lessons cannot be corrected or forgotten through the current integration.
+- One target per process. Custom services need an adapter, allowed actions and suitable rules;
+  the demo's built-in rules are not a general-purpose production runbook.
+- Human approval and an allowed-action catalog do not establish that an action is safe for every
+  service. Validate actions and access controls for your deployment.
+
+## Code map
+
+All runtime code ships in `backend/fixonce`:
+
+| Path | Purpose |
+| --- | --- |
+| `target.py`, `redact.py` | Read the target and mask log messages |
+| `agents/`, `orchestrator.py` | Triage, recall, detect recurrence, propose fixes, check outcomes and write lessons |
+| `memory/`, `llm.py` | Meko connection and Gemini / built-in rules |
+| `main.py`, `web/index.html` | API and the single-file on-call page |
+| `demo/shop.py`, `cli.py` | Simulated shop and the `fixonce` command |
+
+## Team and presentation
+
+**Vedansh Mathur · Vishal Verma · Vishesh Gupta**
+
+Demo video and slide links will be added when available.

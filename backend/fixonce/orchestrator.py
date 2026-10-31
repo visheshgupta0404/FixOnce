@@ -44,7 +44,7 @@ class Orchestrator:
     async def _written(self, inc: Incident) -> None:
         """Wait for this incident's background writes (the lesson needs its conversation id)."""
         task = self._traces.get(inc.id)
-        if task:
+        if task and not task.done():
             await asyncio.gather(task, return_exceptions=True)
 
     async def _learn(self, inc: Incident) -> None:
