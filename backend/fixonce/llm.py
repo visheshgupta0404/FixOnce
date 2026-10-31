@@ -35,6 +35,12 @@ class LLM:
         self.fallbacks = 0              # times the rule-based stand-in answered because Gemini failed
         self.last_error: str | None = None
         self._down_until = 0.0
+        self.calls: list[dict] = []     # every request sent to Gemini (shown as "What left this machine")
+
+    def _sent(self, task: str, prompt: str, ok: bool, note: str = "") -> None:
+        self.calls.append({"t": time.time(), "to": "gemini", "op": task, "model": settings.gemini_model,
+                           "chars": len(prompt), "ok": ok, "note": note})
+        self.calls = self.calls[-300:]
 
     def _gemini(self):
         if self._client is None:
@@ -55,9 +61,11 @@ class LLM:
                     missing = [k for k in schema.get("required", []) if k not in out]
                     if missing:
                         raise LLMError(f"{task}: missing keys {missing}")
+                    self._sent(task, prompt, True)
                     return out
                 except Exception as e:
                     last_err = e if str(e) else LLMError(f"no answer in {TIMEOUT_S:.0f}s")
+                    self._sent(task, prompt, False, str(last_err)[:120])
             self._down_until = time.time() + COOLDOWN_S
         return self._fallback(task, last_err, fallback)
 
@@ -88,8 +96,10 @@ class LLM:
         try:
             resp = await asyncio.wait_for(asyncio.to_thread(
                 self._gemini().models.generate_content, model=settings.gemini_model, contents=prompt), TIMEOUT_S)
+            self._sent("text", prompt, True)
             return resp.text.strip()
         except Exception as e:
+            self._sent("text", prompt, False, str(e)[:120] or "timeout")
             self._down_until = time.time() + COOLDOWN_S
             self.last_error = f"text: {str(e)[:200] or 'timeout'}"
             self.fallbacks += 1

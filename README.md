@@ -60,6 +60,8 @@ Free instances sleep after 15 idle minutes, so point a free uptime monitor at `/
    avoids the steps that made it worse, and pauses the export job. Fixed first time.
 3. In the recall panel, see exactly what Meko returned and stored. Correct or forget the new lesson,
    then promote it: it joins the shared team knowledge panel and is locked from then on.
+4. Scroll to **What left this machine**: every request that went to Meko and to Gemini, and the
+   customer emails and IPs masked in the logs before anything was sent. Nothing else leaves.
 
 ## How Meko is used (and why)
 
@@ -108,6 +110,9 @@ app = fixonce.create_app(target=Payments())   # FastAPI app: API + on-call page;
 | Anything else | Nowhere. The package has no telemetry and no FixOnce server |
 
 The agents only ever propose an action from your `actions` list, and a human taps Apply before it runs.
+The page's **What left this machine** panel lists every request to Meko and the LLM as it happens.
+A complete adapter to copy: [examples/payments_target.py](examples/payments_target.py)
+(`fixonce serve --target examples.payments_target:Payments` from the repo root).
 Details, the HTTP contract and every setting: [docs/package.md](docs/package.md).
 
 ## Architecture

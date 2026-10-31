@@ -23,18 +23,19 @@ Built for the Meko challenge, Track A, at hackCBS 9.0. Deadline: submit by 10 AM
 ## Code map
 FixOnce is one pip package, `backend/fixonce` (`pip install ./backend`, command `fixonce`). Companies run it
 inside their own infra (mentor feedback: no third-party server sees their data). See `docs/package.md`.
-- `backend/fixonce/demo/shop.py`: demo shop SIMULATION with chaos scenarios (Teammate B owns)
+- `backend/fixonce/demo/shop.py`: demo shop SIMULATION with chaos scenarios
 - `backend/fixonce/models.py`: the shared contract. Change only together, then promote the change
 - `backend/fixonce/target.py`: the watched service (HTTP or Python adapter); `redact.py` masks logs first
-- `backend/fixonce/memory/`: the ONE door to Meko (`service.py`), MCP client, real + fake backends (Vedansh)
-- `backend/fixonce/agents/`: triage, recall, fixer, scribe (Vedansh)
-- `backend/fixonce/orchestrator.py`: incident flow + watcher (Vedansh)
-- `backend/fixonce/main.py`: API endpoints from the contract (Teammate B owns)
-- `backend/fixonce/store.py`: incident store, in-memory; may move to YugabyteDB (Teammate B)
+- `backend/fixonce/memory/`: the ONE door to Meko (`service.py`), MCP client, real + fake backends
+- `backend/fixonce/agents/`: triage, recall, fixer, scribe
+- `backend/fixonce/orchestrator.py`: incident flow + watcher
+- `backend/fixonce/main.py`: API endpoints from the contract
+- `backend/fixonce/store.py`: incident store, in-memory; may move to YugabyteDB
 - `backend/fixonce/web/index.html`: the page judges see (shipped inside the package)
 - `backend/fixonce/__init__.py` (`configure`, `create_app`) and `cli.py`: the package's public surface
 
 ## Rules
 - Python 3.11+, FastAPI, small files, plain words in anything a user sees.
 - Run `cd backend && python -m pytest -q` before every push. Keep the tests green.
-- Branches: `feat/agents` (Vedansh), `feat/platform` (B), `feat/experience` (C). Merge at 6 PM, 1 AM, 3 AM.
+- From 31 Oct, 7 PM, Vedansh owns everything (no split by layer). Work on short `feat/*` branches,
+  merge to `main` when tests pass. Teammates still promote their own decisions for Check T.

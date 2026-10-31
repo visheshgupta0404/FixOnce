@@ -30,6 +30,7 @@
   .item:first-child { border-top:0; }
   .muted { color:var(--muted); font-size:13px; }
   .log { max-height:260px; overflow:auto; font:12px/1.4 ui-monospace, Menlo, monospace; }
+  .mono { font:12px/1.4 ui-monospace, Menlo, monospace; word-break:break-all; }
   textarea, input[type=text] { width:100%; font:inherit; padding:6px; border:1px solid var(--line); border-radius:8px; }
   .grid2 { display:grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap:16px; }
   @media (max-width: 860px) { .grid2 { grid-template-columns: 1fr; } }
@@ -67,7 +68,7 @@
       <div class="card"><h2>Timeline</h2><div id="timeline" class="log"></div></div>
       <div class="card"><h2>Incidents and time to fix</h2><div id="incidents"></div></div>
     </div>
-    <div class="card"><h2>Every Meko call (live)</h2><div id="mekolog" class="log"></div></div>
+    <div class="card"><h2>What left this machine (live)</h2><div id="egress"></div><div id="mekolog" class="log"></div></div>
   </section>
 </main>
 <script>
@@ -88,8 +89,8 @@ async function refresh() {
   $("#mekoState").dataset.on = st.meko_enabled;
   $("#backendState").innerHTML = `Memory: ${st.meko_backend === "meko" ? "real Meko" : '<span class="tag bad">offline stand-in, not Meko</span>'}
     · Model: ${esc(st.llm)}${st.llm_fallbacks ? ` <span class="tag warn" title="${esc(st.llm_last_error)}">Gemini unavailable ${st.llm_fallbacks}×: rule-based stand-in answered</span>` : ""}${st.pending_writes ? ` · <span class="tag warn">${st.pending_writes} Meko writes waiting to retry</span>` : ""}
-    · ${st.simulation ? "The shop and the Break buttons are a simulation." : "Watching your own service; logs are " + (st.redact ? "redacted" : "NOT redacted") + " before any agent sees them."}`;
-  $("#simRow").style.display = st.simulation ? "" : "none";
+    · ${st.simulation ? (st.chaos ? "The shop and the Break buttons are a simulation." : "This service is a simulation.") : "Watching your own service; logs are " + (st.redact ? "redacted" : "NOT redacted") + " before any agent sees them."}`;
+  $("#simRow").style.display = st.simulation && st.chaos ? "" : "none";
   for (const [k, v] of Object.entries(st.actions || {})) LABEL[k] ??= v;
   const list = await api("/incidents");
   current = list[0] || null;
@@ -99,8 +100,20 @@ async function refresh() {
     <div class="muted">Tries: ${i.attempts.map((a) => `${a.action} (${a.result})`).join(", ") || "none"} · time to fix: ${i.time_to_fix_s ?? "-"} s</div></div>`).join("") || '<div class="muted">None yet.</div>';
   $("#timeline").innerHTML = current ? current.timeline.slice().reverse().map((e) => `<div>${time(e.t)} <b>${esc(e.who)}</b>: ${esc(e.what)}</div>`).join("") : "";
   if (current) renderContext(await api(`/incidents/${current.id}/context`));
-  const log = await api("/api/meko/log?limit=40");
-  $("#mekolog").innerHTML = log.slice().reverse().map((e) => `<div>${time(e.t)} <b>${esc(e.agent)}</b> ${esc(e.op)} ${e.ok ? "" : "⚠"} ${esc(e.note)}</div>`).join("") || "No Meko calls yet.";
+  renderEgress(await api("/api/egress?limit=40"));
+}
+
+function renderEgress(e) {
+  const dest = e.destinations.map((d) => `<div class="item"><b>→ ${esc(d.name)}</b> ${d.host
+    ? `<span class="tag">${esc(d.host)}</span> ${d.calls} requests · <span class="muted">${esc(d.why)}</span>`
+    : '<span class="tag good">nothing sent</span> <span class="muted">' + (d.name === "Meko" ? "offline stand-in, memory stays in this process" : "no LLM key: built-in rules") + "</span>"}</div>`).join("");
+  const r = e.redaction, masked = Object.entries(r.masked).filter(([, n]) => n);
+  const red = r.on
+    ? `<div class="item"><b>Masked before sending</b> <span class="tag good">${masked.map(([k, n]) => `${n} ${k}`).join(" · ") || "nothing to mask yet"}</span>
+       <span class="muted">in ${r.lines} log lines</span>${r.last ? `<div class="muted mono">${esc(r.last)}</div>` : ""}</div>`
+    : '<div class="item"><span class="tag bad">Redaction is OFF (FIXONCE_REDACT=false)</span></div>';
+  $("#egress").innerHTML = `<div class="muted">No FixOnce server, no telemetry. Only these leave this machine:</div>${dest}${red}`;
+  $("#mekolog").innerHTML = e.recent.slice().reverse().map((x) => `<div>${time(x.t)} <b>→ ${esc(x.to)}</b> ${esc(x.op)}${x.chars ? ` (${x.chars} chars)` : ""} ${x.ok ? "" : "⚠"} ${esc((x.note || "").slice(0, 90))}</div>`).join("") || "Nothing sent yet.";
 }
 
 function renderPhone(i) {

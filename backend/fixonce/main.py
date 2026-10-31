@@ -6,6 +6,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
@@ -16,6 +17,7 @@ from .llm import llm
 from .memory import memory
 from .models import ACTION_LABELS, Ask, CorrectLesson, Decision, MekoSetting, PromoteLesson
 from .orchestrator import orchestrator
+from .redact import stats as redaction
 from .seed import seed
 from .store import store
 from .target import target
@@ -49,7 +51,7 @@ def index():
 def status():
     return {"meko_enabled": memory.enabled, "meko_backend": memory.mode, "llm": llm.mode,
             "llm_fallbacks": llm.fallbacks, "llm_last_error": llm.last_error,
-            "pending_writes": len(memory.pending_writes), "simulation": target.simulation,
+            "pending_writes": len(memory.pending_writes), "simulation": target.simulation, "chaos": target.supports("chaos"),
             "actions": ACTION_LABELS, "redact": settings.redact}
 
 
@@ -183,6 +185,26 @@ async def forget(lesson_id: str):
 def meko_log(limit: int = 50):
     """Every Meko call this server made, newest last."""
     return memory.log[-limit:]
+
+
+@app.get("/api/egress")
+def egress(limit: int = 40):
+    """What left this machine: every request to Meko and to the LLM, and what redaction masked first.
+    Nothing else is sent anywhere (no FixOnce server, no telemetry)."""
+    real_meko = memory.mode == "meko"
+    meko = [{"t": e["t"], "to": "meko", "op": e["op"], "ok": e["ok"], "note": e["note"]}
+            for e in memory.log if real_meko and not e["note"].startswith("skipped")]
+    return {
+        "destinations": [
+            {"name": "Meko", "host": urlparse(settings.meko_url).hostname if real_meko else None,
+             "why": "your own datapack: lessons, postmortems, decision traces", "calls": len(meko)},
+            {"name": "Gemini", "host": "generativelanguage.googleapis.com" if llm.mode == "gemini" else None,
+             "why": "your own key: triage and fix proposals", "calls": len(llm.calls)},
+        ],
+        "redaction": {"on": settings.redact, "lines": redaction["lines"], "masked": dict(redaction["masked"]),
+                      "last": redaction["last"]},
+        "recent": sorted(meko + llm.calls, key=lambda e: e["t"])[-limit:],
+    }
 
 
 @app.post("/ask")

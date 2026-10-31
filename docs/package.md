@@ -15,6 +15,10 @@ service it watches. There is no FixOnce server and no telemetry. Data leaves the
 Before either of those, log lines are redacted in-process: emails, IPs, secrets (`token=`,
 `password=`, `Bearer ...`), card and phone numbers. `FIXONCE_REDACT=false` turns this off.
 
+The page proves it live: the **What left this machine** panel (`GET /api/egress`) lists every
+request sent to Meko and to the LLM (task, size, result), how many emails, IPs and secrets were
+masked, and the last masked log line. With no keys it says "nothing sent" for both.
+
 Meko itself is a hosted service. A company that cannot use any external store can run FixOnce with
 Meko off; it still triages and proposes a safe fix, but it does not learn. That trade-off is the
 product's point, and the page shows which mode is running.
@@ -74,7 +78,9 @@ Pass any object with the same four async methods: `metrics()`, `logs(limit)`, `d
   A rule blocks when `metrics()[when]` is truthy, or always when `when == "always"`.
 - `simulation`: `True` only for a demo target.
 
-See `backend/tests/test_package.py` for a complete example (`PaymentsTarget`).
+A complete example to copy is `examples/payments_target.py`: a payments service with its own three
+actions and a settlement-window rule. Run it with `fixonce serve --target examples.payments_target:Payments`
+from the repo root. The tests use a similar `PaymentsTarget` (`backend/tests/test_package.py`).
 
 ## Settings
 

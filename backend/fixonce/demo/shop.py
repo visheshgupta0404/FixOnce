@@ -67,6 +67,12 @@ def _fresh_state() -> dict:
 STATE = _fresh_state()
 
 
+def _customer() -> str:
+    """Made-up customer details, like real error logs carry. FixOnce must mask them (redact.py)."""
+    n = random.randint(1000, 9999)
+    return f"customer=cust{n}@mail.example client_ip=10.4.{n % 250}.{n % 97}"
+
+
 def _log(level: str, msg: str, pod: str | None = None) -> None:
     pod = pod or random.choice(STATE["pods"])
     STATE["logs"].append({"t": round(time.time(), 1), "level": level, "pod": pod, "msg": msg})
@@ -148,7 +154,7 @@ def _tick() -> None:
         req = uuid.uuid4().hex[:8]
         if random.random() < rate:
             status, ms, why = _failure(route)
-            _log("ERROR", f"{method} {route} {status} {ms}ms req={req} {why}")
+            _log("ERROR", f"{method} {route} {status} {ms}ms req={req} {_customer()} {why}")
         else:
             _log("INFO", f"{method} {route} 200 {_latency_ms(base)}ms req={req}")
 
