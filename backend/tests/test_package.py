@@ -108,10 +108,10 @@ def test_cli_loads_a_target_by_module_path():
     assert isinstance(t, PaymentsTarget)
 
 
-def test_egress_lists_only_meko_and_llm_and_shows_masking(payments):
+def test_egress_lists_meko_llm_webhook_and_shows_masking(payments):
     client = TestClient(fixonce.create_app())
     asyncio.run(target.logs(5))
     e = client.get("/api/egress").json()
-    assert [d["name"] for d in e["destinations"]] == ["Meko", "Gemini"]
+    assert [d["name"] for d in e["destinations"]] == ["Meko", "Gemini", "Webhook"]
     assert all(d["host"] is None for d in e["destinations"])  # offline: nothing leaves at all
     assert e["redaction"]["masked"]["email"] >= 1 and "<email>" in e["redaction"]["last"]

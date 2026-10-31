@@ -12,6 +12,7 @@ from .config import settings
 from .llm import LLMError
 from .memory import memory
 from .models import ACTION_LABELS, Attempt, Incident, MemoryItem
+from .notify import notifier
 from .store import store
 from .target import target
 
@@ -89,6 +90,7 @@ class Orchestrator:
         inc.log("fixer", f"Proposes: {ACTION_LABELS[p['action']]}. {p['reason']}")
         await memory.log_decision(inc.conversation_id, "fixer", inc.signature, p["action"], p["reason"],
                                   [f"used memory {m}" for m in p.get("used_memory_ids", [])])
+        notifier.emit("incident.proposed", inc)
 
     # ---- human decisions ---------------------------------------------------------
     async def decide(self, incident_id: str, choice: str, by: str = "on-call") -> dict:
@@ -122,6 +124,7 @@ class Orchestrator:
         if ok:
             inc.status, inc.resolved_at = "resolved", time.time()
             inc.log("system", f"Resolved in {inc.time_to_fix_s}s")
+            notifier.emit("incident.resolved", inc)
             await self._learn(inc)
             return
         if len(inc.attempts) >= settings.max_fix_attempts:
@@ -144,6 +147,7 @@ class Orchestrator:
         inc.status = "escalated"
         inc.proposed_action = None
         inc.log("system", f"Escalated: {why}")
+        notifier.emit("incident.escalated", inc)
 
     # ---- lessons (visible context, A4) -------------------------------------------
     @staticmethod

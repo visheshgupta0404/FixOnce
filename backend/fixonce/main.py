@@ -16,6 +16,7 @@ from .config import settings
 from .llm import llm
 from .memory import memory
 from .models import ACTION_LABELS, Ask, CorrectLesson, Decision, MekoSetting, PromoteLesson
+from .notify import notifier
 from .orchestrator import orchestrator
 from .redact import stats as redaction
 from .seed import seed
@@ -200,10 +201,12 @@ def egress(limit: int = 40):
              "why": "your own datapack: lessons, postmortems, decision traces", "calls": len(meko)},
             {"name": "Gemini", "host": "generativelanguage.googleapis.com" if llm.mode == "gemini" else None,
              "why": "your own key: triage and fix proposals", "calls": len(llm.calls)},
+            {"name": "Webhook", "host": urlparse(settings.webhook_url).hostname if settings.webhook_url else None,
+             "why": "your own n8n / Slack / WhatsApp flow: incident alerts", "calls": len(notifier.calls)},
         ],
         "redaction": {"on": settings.redact, "lines": redaction["lines"], "masked": dict(redaction["masked"]),
                       "last": redaction["last"]},
-        "recent": sorted(meko + llm.calls, key=lambda e: e["t"])[-limit:],
+        "recent": sorted(meko + llm.calls + notifier.calls, key=lambda e: e["t"])[-limit:],
     }
 
 

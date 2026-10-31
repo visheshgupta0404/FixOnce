@@ -27,6 +27,12 @@ class Settings:
     # mask emails, IPs, secrets, card and phone numbers in logs before agents, the LLM or Meko see them
     redact: bool = _bool("FIXONCE_REDACT", "true")
 
+    # Outgoing webhook for n8n / Slack / WhatsApp (notify.py); empty = off
+    webhook_url: str = os.getenv("FIXONCE_WEBHOOK_URL", "")
+    webhook_secret: str = os.getenv("FIXONCE_WEBHOOK_SECRET", "")
+    # where people open FixOnce (the link in notifications)
+    public_url: str = os.getenv("FIXONCE_PUBLIC_URL", "http://localhost:8000")
+
     # Timings
     watch_interval_s: float = float(os.getenv("WATCH_INTERVAL_SECONDS", "3"))
     error_threshold: float = float(os.getenv("ERROR_THRESHOLD", "0.05"))

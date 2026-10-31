@@ -106,7 +106,7 @@ async function refresh() {
 function renderEgress(e) {
   const dest = e.destinations.map((d) => `<div class="item"><b>→ ${esc(d.name)}</b> ${d.host
     ? `<span class="tag">${esc(d.host)}</span> ${d.calls} requests · <span class="muted">${esc(d.why)}</span>`
-    : '<span class="tag good">nothing sent</span> <span class="muted">' + (d.name === "Meko" ? "offline stand-in, memory stays in this process" : "no LLM key: built-in rules") + "</span>"}</div>`).join("");
+    : '<span class="tag good">nothing sent</span> <span class="muted">' + ({ Meko: "offline stand-in, memory stays in this process", Gemini: "no LLM key: built-in rules", Webhook: "no webhook set" }[d.name] || "") + "</span>"}</div>`).join("");
   const r = e.redaction, masked = Object.entries(r.masked).filter(([, n]) => n);
   const red = r.on
     ? `<div class="item"><b>Masked before sending</b> <span class="tag good">${masked.map(([k, n]) => `${n} ${k}`).join(" · ") || "nothing to mask yet"}</span>
