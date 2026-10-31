@@ -25,20 +25,33 @@ def _tok(s):
     return {w for w in re.findall(r"[a-z0-9_]+", s.lower()) if len(w) > 2}
 
 
-def _search(query, limit=10):
+def _search(query, limit=10, promoted=False):
+    """Like real Meko, promoted memories leave mem0 search and show up in the knowledge base."""
     q = _tok(query)
     out = []
     for m in STATE["memories"]:
         score = len(q & _tok(m["memory"])) / max(1, len(q))
-        if score > 0:
+        if score > 0 and m["promoted"] == promoted:
             out.append({**m, "score": round(score, 3), "raw_similarity_score": round(score * 0.9, 3)})
     return sorted(out, key=lambda m: m["score"], reverse=True)[:limit]
 
 
+def _kb_chunk(m):
+    return {"id": uuid.uuid4().hex, "chunk_text": m["memory"], "document_id": uuid.uuid4().hex,
+            "metadata_filters": {"source": "memory", "agent_id": m["agent_id"], "memory_id": m["id"]},
+            "distance": round(1 - m["score"], 3), "match_type": "hybrid", "rerank_score": m["score"]}
+
+
 def _tool(name, a):
     STATE["calls"].append(name)
+    # Real Meko rules: every tool but conversation_create needs a conversation_id,
+    # and metadata is a JSON string, not an object.
+    if name != "conversation_create" and not a.get("conversation_id"):
+        raise ValueError("conversation_id: Missing required argument")
+    if a.get("metadata") is not None and not isinstance(a["metadata"], str):
+        raise ValueError("metadata: Input should be a valid string")
     if name == "memory_add":
-        m = {"id": uuid.uuid4().hex, "memory": a["text"], "metadata": a.get("metadata") or {},
+        m = {"id": uuid.uuid4().hex, "memory": a["text"], "metadata": json.loads(a.get("metadata") or "{}"),
              "agent_id": a.get("agent_id"), "promoted": False}
         STATE["memories"].append(m)
         return {"results": [{"id": m["id"], "memory": m["memory"], "event": "ADD"}]} if STATE["add_returns_ids"] \
@@ -46,16 +59,25 @@ def _tool(name, a):
     if name == "memory_search":
         return {"results": _search(a["query"], a.get("limit", 10))}
     if name == "context_search":
-        return {"memory": {"status": "ok", "results": _search(a["query"], a.get("limit", 10))},
-                "knowledge_base": {"status": "empty", "results": []},
-                "conversation": {"status": "empty", "results": []}}
+        return {"results": {"knowledge_base": [], "memory": _search(a["query"], a.get("limit", 10)),
+                            "conversation": {"hits": [], "thread": []}},
+                "match_quality": "mid"}
+    if name == "knowledgebase_search":
+        chunks = [_kb_chunk(m) for m in _search(a["query"], a.get("limit", 10), promoted=True)]
+        return {"results": chunks, "count": len(chunks)}
     if name == "memory_promote":
         for m in STATE["memories"]:
             if m["id"] in a["memory_ids"]:
                 m["promoted"] = True
         return {"promoted": len(a["memory_ids"])}
+    if name == "memory_get_by_id":
+        m = next((m for m in STATE["memories"] if m["id"] == a["memory_id"] and not m["promoted"]), None)
+        return {"error": "not_found", "detail": f"No memory found with id {a['memory_id']}."} if m is None \
+            else {"id": m["id"], "memory": m["memory"], "agent_id": m["agent_id"]}
     if name in ("memory_delete_by_id", "memory_update"):
         m = next((m for m in STATE["memories"] if m["id"] == a["memory_id"]), None)
+        if m is not None and m["promoted"]:  # real Meko: promotion is one-way, the memory left mem0
+            raise RuntimeError(f"Error calling tool '{name}': Object of type UUID is not JSON serializable")
         if m is None or m["agent_id"] != a.get("agent_id"):
             raise PermissionError("agent_id must match the writer")
         if name == "memory_update":
@@ -64,12 +86,14 @@ def _tool(name, a):
             STATE["memories"].remove(m)
         return {"ok": True}
     if name == "memory_get_all":
-        rows = [m for m in STATE["memories"] if a.get("promoted") is None or m["promoted"] == a["promoted"]]
-        return {"results": rows[-20:], "total": len(rows)}
+        promoted = bool(a.get("promoted"))
+        rows = [{"id": m["id"], "data": m["memory"], "agent_id": m["agent_id"]}
+                for m in STATE["memories"] if m["promoted"] == promoted]
+        return {"promoted_memories" if promoted else "memories": rows[-20:], "total": len(rows)}
     if name == "conversation_create":
         cid = uuid.uuid4().hex
         STATE["conversations"][cid] = []
-        return {"conversation_id": cid}
+        return {"id": cid, "agent_id": a.get("agent_id"), "title": a.get("title")}
     if name == "conversation_add_message":
         STATE["conversations"].setdefault(a["conversation_id"], []).append(a)
         return {"ok": True}
@@ -103,13 +127,16 @@ async def mcp(request: Request):
         return Response(status_code=202)
     if method == "tools/list":
         return _reply({"jsonrpc": "2.0", "id": rid, "result": {"tools": [{"name": n} for n in (
-            "context_search", "memory_add", "memory_search", "memory_promote", "memory_delete_by_id",
+            "context_search", "knowledgebase_search", "memory_add", "memory_search", "memory_promote",
+            "memory_get_by_id", "memory_delete_by_id",
             "memory_update", "memory_get_all", "conversation_create", "conversation_add_message", "artifact_put")]}})
     if method == "tools/call":
         p = msg["params"]
         try:
-            out = _tool(p["name"], p.get("arguments", {}))
-            result = {"content": [{"type": "text", "text": json.dumps(out)}], "isError": False}
+            text = json.dumps(_tool(p["name"], p.get("arguments", {})))
+            # Real Meko sends the same JSON twice: as text, and wrapped as {"result": "<json text>"}.
+            result = {"content": [{"type": "text", "text": text}], "structuredContent": {"result": text},
+                      "isError": False}
         except Exception as e:
             result = {"content": [{"type": "text", "text": str(e)}], "isError": True}
         return _reply({"jsonrpc": "2.0", "id": rid, "result": result})

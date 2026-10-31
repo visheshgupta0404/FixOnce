@@ -20,12 +20,16 @@ async def main() -> None:
     tools = await meko.client.list_tools()
     print(f"{len(tools)} tools:", ", ".join(t["name"] for t in tools))
 
+    cid = await meko._cid(None)
+    print("conversation_id:", cid)
+
     added = await meko.client.call("memory_add", meko._dp(
         text="FixOnce connection test: the checkout export job runs at 2 AM.", agent_id="scribe",
-        metadata={"kind": "test"}))
+        metadata=json.dumps({"kind": "test"}), conversation_id=cid))
     print("\nmemory_add raw:", json.dumps(added, indent=2)[:1500])
 
-    found = await meko.client.call("context_search", meko._dp(query="when does the checkout export job run", agent_id="recall", limit=3))
+    found = await meko.client.call("context_search", meko._dp(
+        query="when does the checkout export job run", agent_id="recall", limit=3, conversation_id=cid))
     print("\ncontext_search raw:", json.dumps(found, indent=2)[:2500])
     print("\nparsed items:", [i.model_dump() for i in _walk_items(found, "memory")])
 

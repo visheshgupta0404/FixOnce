@@ -56,19 +56,36 @@ def test_off_vs_on_through_real_meko_path(sse):
     assert on.recall.items and all(i.id for i in on.recall.items)   # real ids from Meko
     assert on.lesson_ids                                              # lesson stored with a real id
     assert "context_search" in mock_meko.STATE["calls"]
+    assert any(i.source == "knowledge_base" for i in on.recall.items)  # seeded lessons are promoted
 
 
-def test_promote_correct_forget_use_real_ids_and_writer_agent():
+def test_correct_forget_promote_use_real_ids_and_writer_agent():
+    use_mock()
+    inc = asyncio.run(run_incident(True))
+    lid = inc.lesson_ids[0]
+    assert asyncio.run(orch_mod.orchestrator.correct(lid, "Corrected lesson text")) == {"corrected": lid}
+    assert next(m for m in mock_meko.STATE["memories"] if m["id"] == lid)["memory"] == "Corrected lesson text"
+    assert inc.stored[0].text == "Corrected lesson text"            # the panel shows the new text
+    asyncio.run(orch_mod.orchestrator.promote(lid, "on-call"))
+    assert next(m for m in mock_meko.STATE["memories"] if m["id"] == lid)["promoted"]
+    assert inc.stored[0].promoted is True                             # the panel can lock it
+    assert all(e["ok"] for e in memory.log if e["op"] in ("promote", "correct"))
+    other = asyncio.run(memory.save_lesson("Unpromoted lesson to forget", {}, None))[0].id
+    assert asyncio.run(orch_mod.orchestrator.forget(other)) == {"forgotten": other}
+    assert all(m["id"] != other for m in mock_meko.STATE["memories"])
+
+
+def test_promoted_lesson_is_locked_and_says_so():
+    """Real Meko: promotion is one-way. Correct/Forget must say no plainly, not fake success or queue."""
     use_mock()
     inc = asyncio.run(run_incident(True))
     lid = inc.lesson_ids[0]
     asyncio.run(orch_mod.orchestrator.promote(lid, "on-call"))
-    assert next(m for m in mock_meko.STATE["memories"] if m["id"] == lid)["promoted"]
-    asyncio.run(orch_mod.orchestrator.correct(lid, "Corrected lesson text"))
-    assert next(m for m in mock_meko.STATE["memories"] if m["id"] == lid)["memory"] == "Corrected lesson text"
-    asyncio.run(orch_mod.orchestrator.forget(lid))
-    assert all(m["id"] != lid for m in mock_meko.STATE["memories"])
-    assert all(e["ok"] for e in memory.log if e["op"] in ("promote", "correct", "forget"))
+    assert asyncio.run(orch_mod.orchestrator.correct(lid, "new text"))["corrected"] is None
+    assert "promoted" in asyncio.run(orch_mod.orchestrator.forget(lid))["error"]
+    assert any(m["id"] == lid for m in mock_meko.STATE["memories"])
+    assert not memory.pending_writes
+    assert [e["ok"] for e in memory.log if e["op"] in ("correct", "forget")] == [False, False]
 
 
 def test_memory_add_without_ids_finds_the_real_id():

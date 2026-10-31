@@ -11,7 +11,7 @@ from .agents import fixer, recall as recall_agent, scribe, triage as triage_agen
 from .config import settings
 from .llm import LLMError
 from .memory import memory
-from .models import ACTION_LABELS, Attempt, Incident
+from .models import ACTION_LABELS, Attempt, Incident, MemoryItem
 from .shop_client import shop
 from .store import store
 
@@ -137,19 +137,46 @@ class Orchestrator:
         inc.log("system", f"Escalated: {why}")
 
     # ---- lessons (visible context, A4) -------------------------------------------
-    async def promote(self, lesson_id: str, by: str) -> dict:
+    @staticmethod
+    def _lesson(lesson_id: str) -> tuple[Incident | None, MemoryItem | None]:
         inc = next((i for i in store.all() if lesson_id in i.lesson_ids), None)
-        await memory.promote([lesson_id], inc.conversation_id if inc else None)
+        item = next((s for s in inc.stored if s.id == lesson_id), None) if inc else None
+        return inc, item
+
+    async def promote(self, lesson_id: str, by: str) -> dict:
+        inc, item = self._lesson(lesson_id)
+        result = await memory.promote([lesson_id], inc.conversation_id if inc else None)
+        if result is None:
+            return {"promoted": None, "error": "Meko did not confirm the promotion (OFF or unreachable)."}
+        if item:
+            item.promoted = True  # Meko promotion is one-way: the lesson is now locked
         if inc:
             inc.log(by, "Confirmed the fix held: lesson promoted to shared team knowledge")
         return {"promoted": lesson_id}
 
     async def forget(self, lesson_id: str) -> dict:
-        await memory.forget(lesson_id)
+        result = await memory.forget(lesson_id)
+        if isinstance(result, dict) and result.get("ok") is False:
+            return {"forgotten": None, "error": result["error"]}
+        if result is None:
+            return {"forgotten": None, "error": "Meko did not confirm: it is OFF, or unreachable and the change is queued."}
+        inc, item = self._lesson(lesson_id)
+        if inc and item:
+            inc.stored.remove(item)
+            inc.lesson_ids.remove(lesson_id)
+            inc.log("on-call", "Forgot the lesson in Meko")
         return {"forgotten": lesson_id}
 
     async def correct(self, lesson_id: str, text: str) -> dict:
-        await memory.correct(lesson_id, text)
+        result = await memory.correct(lesson_id, text)
+        if isinstance(result, dict) and result.get("ok") is False:
+            return {"corrected": None, "error": result["error"]}
+        if result is None:
+            return {"corrected": None, "error": "Meko did not confirm: it is OFF, or unreachable and the change is queued."}
+        inc, item = self._lesson(lesson_id)
+        if item:
+            item.text = text
+            inc.log("on-call", "Corrected the lesson in Meko")
         return {"corrected": lesson_id}
 
     # ---- watcher -----------------------------------------------------------------
