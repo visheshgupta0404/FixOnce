@@ -1,194 +1,1221 @@
 <!doctype html>
-<!-- Starter page that already works end to end. Teammate C: restyle and improve freely,
-     but keep using only the API endpoints from the shared contract. -->
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>FixOnce</title>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,">
+<meta name="color-scheme" content="light dark"><title>FixOnce · On call, with context</title>
 <style>
-  :root { --bg:#f6f7f9; --card:#fff; --ink:#15171a; --muted:#5d6470; --line:#e1e4e8; --accent:#2f6fec; --good:#1f8a4c; --bad:#c43b2f; --warn:#a96a00; }
-  * { box-sizing:border-box; }
-  body { margin:0; font:15px/1.45 system-ui, -apple-system, Segoe UI, sans-serif; background:var(--bg); color:var(--ink); }
-  header { display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; padding:14px 20px; background:var(--card); border-bottom:1px solid var(--line); }
-  h1 { margin:0; font-size:20px; } h1 small { color:var(--muted); font-weight:400; font-size:13px; }
-  main { display:grid; grid-template-columns: minmax(0,380px) minmax(0,1fr); gap:16px; padding:16px 20px; }
-  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; }
-  .card h2 { margin:0 0 8px; font-size:14px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
-  button { font:inherit; border:1px solid var(--line); background:#fff; border-radius:8px; padding:6px 10px; cursor:pointer; }
-  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
-  .switch { display:flex; align-items:center; gap:8px; font-weight:600; }
-  .switch button { min-width:90px; }
-  .on { color:var(--good); } .off { color:var(--bad); }
-  .phone { border:2px solid var(--ink); border-radius:22px; padding:16px; min-height:240px; }
-  .phone .title { font-weight:700; margin-bottom:6px; }
-  .tag { display:inline-block; font-size:12px; padding:1px 8px; border-radius:99px; background:#eef1f5; color:var(--muted); }
-  .tag.bad { background:#fbe9e7; color:var(--bad);} .tag.good { background:#e5f4ea; color:var(--good);} .tag.warn { background:#fdf1dc; color:var(--warn);}
-  .row { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
-  .item { border-top:1px solid var(--line); padding:8px 0; }
-  .item:first-child { border-top:0; }
-  .muted { color:var(--muted); font-size:13px; }
-  .log { max-height:260px; overflow:auto; font:12px/1.4 ui-monospace, Menlo, monospace; }
-  .mono { font:12px/1.4 ui-monospace, Menlo, monospace; word-break:break-all; }
-  textarea, input[type=text] { width:100%; font:inherit; padding:6px; border:1px solid var(--line); border-radius:8px; }
-  .grid2 { display:grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap:16px; }
-  @media (max-width: 860px) { .grid2 { grid-template-columns: 1fr; } }
-</style>
-</head>
-<body>
-<header>
-  <h1>FixOnce <small>every incident, fixed only once</small></h1>
-  <div class="switch">Meko memory: <span id="mekoState">…</span> <button id="mekoBtn">Toggle</button></div>
-  <div class="row" style="margin:0" id="simRow">
-    <span class="muted">Simulation:</span>
-    <button data-chaos="db_pool">Break: DB connections</button>
-    <button data-chaos="bad_deploy">Break: bad deploy</button>
-    <button data-chaos="memory_leak">Break: memory leak</button>
-    <button data-chaos="sale_on">Sale ON</button>
-    <button data-chaos="sale_off">Sale OFF</button>
-    <button id="resetBtn">Reset demo</button>
-  </div>
-  <div id="backendState" class="muted" style="flex-basis:100%"></div>
-</header>
-<main>
-  <section>
-    <div class="card phone" id="phone"><div class="muted">All quiet. Break something (simulation) to see an alert.</div></div>
-    <div class="card" style="margin-top:16px">
-      <h2>Ask about last night</h2>
-      <input type="text" id="askInput" value="What happened last night?">
-      <div class="row"><button id="askBtn">Ask</button></div>
-      <div id="askOut" class="muted" style="white-space:pre-wrap;margin-top:8px"></div>
-    </div>
-  </section>
-  <section style="display:grid;gap:16px">
-    <div class="card"><h2>What Meko recalled and stored for this incident</h2><div id="notice"></div><div id="context" class="muted">No incident yet.</div></div>
-    <div class="card"><h2>Shared team knowledge (promoted in Meko)</h2><div id="team" class="muted">Loading…</div></div>
-    <div class="grid2">
-      <div class="card"><h2>Timeline</h2><div id="timeline" class="log"></div></div>
-      <div class="card"><h2>Incidents and time to fix</h2><div id="incidents"></div></div>
-    </div>
-    <div class="card"><h2>What left this machine (live)</h2><div id="egress"></div><div id="mekolog" class="log"></div></div>
-  </section>
-</main>
-<script>
-const $ = (s) => document.querySelector(s);
-const api = async (path, opts = {}) => {
-  const r = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
-  return r.json();
-};
-const LABEL = { pause_batch_job: "Pause the batch/export job", raise_pool_size: "Raise the DB pool size",
-  scale_up: "Add more replicas", rollback_last_deploy: "Roll back the last deploy", restart_service: "Restart the service" };
-let current = null;
-const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const time = (t) => new Date(t * 1000).toLocaleTimeString();
-
-async function refresh() {
-  const st = await api("/api/status");
-  $("#mekoState").innerHTML = st.meko_enabled ? '<span class="on">ON</span>' : '<span class="off">OFF</span>';
-  $("#mekoState").dataset.on = st.meko_enabled;
-  $("#backendState").innerHTML = `Memory: ${st.meko_backend === "meko" ? "real Meko" : '<span class="tag bad">offline stand-in, not Meko</span>'}
-    · Model: ${esc(st.llm)}${st.llm_fallbacks ? ` <span class="tag warn" title="${esc(st.llm_last_error)}">Gemini unavailable ${st.llm_fallbacks}×: rule-based stand-in answered</span>` : ""}${st.pending_writes ? ` · <span class="tag warn">${st.pending_writes} Meko writes waiting to retry</span>` : ""}
-    · ${st.simulation ? (st.chaos ? "The shop and the Break buttons are a simulation." : "This service is a simulation.") : "Watching your own service; logs are " + (st.redact ? "redacted" : "NOT redacted") + " before any agent sees them."}`;
-  $("#simRow").style.display = st.simulation && st.chaos ? "" : "none";
-  for (const [k, v] of Object.entries(st.actions || {})) LABEL[k] ??= v;
-  const list = await api("/incidents");
-  current = list[0] || null;
-  renderPhone(current);
-  $("#incidents").innerHTML = list.map((i) => `<div class="item"><b>${esc(i.service)}</b> <span class="tag ${i.status === "resolved" ? "good" : i.status === "escalated" ? "bad" : ""}">${i.status}</span>
-    <span class="tag">${i.meko_enabled ? "Meko ON" : "Meko OFF"}</span><div class="muted">${esc(i.signature)}</div>
-    <div class="muted">Tries: ${i.attempts.map((a) => `${a.action} (${a.result})`).join(", ") || "none"} · time to fix: ${i.time_to_fix_s ?? "-"} s</div></div>`).join("") || '<div class="muted">None yet.</div>';
-  $("#timeline").innerHTML = current ? current.timeline.slice().reverse().map((e) => `<div>${time(e.t)} <b>${esc(e.who)}</b>: ${esc(e.what)}</div>`).join("") : "";
-  if (current) renderContext(await api(`/incidents/${current.id}/context`));
-  renderEgress(await api("/api/egress?limit=40"));
+:root {
+  color-scheme: light;
+  --bg: #f3f5f8;
+  --surface: #fff;
+  --ink: #192536;
+  --muted: #647184;
+  --line: #dce3eb;
+  --accent: #345ee8;
+  --tint: #edf2ff;
+  --green: #16734c;
+  --green-bg: #e8f5ee;
+  --red: #b32f40;
+  --red-bg: #fff0f1;
+  --amber: #8c5b06;
+  --amber-bg: #fff5dd;
+  --shadow: 0 8px 32px #24345308
 }
 
-function renderEgress(e) {
-  const dest = e.destinations.map((d) => `<div class="item"><b>→ ${esc(d.name)}</b> ${d.host
-    ? `<span class="tag">${esc(d.host)}</span> ${d.calls} requests · <span class="muted">${esc(d.why)}</span>`
-    : '<span class="tag good">nothing sent</span> <span class="muted">' + ({ Meko: "offline stand-in, memory stays in this process", Gemini: "no LLM key: built-in rules", Webhook: "no webhook set" }[d.name] || "") + "</span>"}</div>`).join("");
-  const r = e.redaction, masked = Object.entries(r.masked).filter(([, n]) => n);
-  const red = r.on
-    ? `<div class="item"><b>Masked before sending</b> <span class="tag good">${masked.map(([k, n]) => `${n} ${k}`).join(" · ") || "nothing to mask yet"}</span>
-       <span class="muted">in ${r.lines} log lines</span>${r.last ? `<div class="muted mono">${esc(r.last)}</div>` : ""}</div>`
-    : '<div class="item"><span class="tag bad">Redaction is OFF (FIXONCE_REDACT=false)</span></div>';
-  $("#egress").innerHTML = `<div class="muted">No FixOnce server, no telemetry. Only these leave this machine:</div>${dest}${red}`;
-  $("#mekolog").innerHTML = e.recent.slice().reverse().map((x) => `<div>${time(x.t)} <b>→ ${esc(x.to)}</b> ${esc(x.op)}${x.chars ? ` (${x.chars} chars)` : ""} ${x.ok ? "" : "⚠"} ${esc((x.note || "").slice(0, 90))}</div>`).join("") || "Nothing sent yet.";
+[data-theme=dark] {
+  color-scheme: dark;
+  --bg: #101720;
+  --surface: #192330;
+  --ink: #edf2fa;
+  --muted: #b0bdcf;
+  --line: #344255;
+  --accent: #9bb4ff;
+  --tint: #253350;
+  --green: #8be0b5;
+  --green-bg: #19392e;
+  --red: #ffa2ac;
+  --red-bg: #43252d;
+  --amber: #f4d28c;
+  --amber-bg: #3c3320;
+  --shadow: none
+}
+
+* {
+  box-sizing: border-box
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif
+}
+
+button,
+input,
+textarea {
+  font: inherit
+}
+
+button {
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  font-weight: 600
+}
+
+button:hover {
+  border-color: var(--accent)
+}
+
+button:disabled {
+  cursor: wait;
+  opacity: .55
+}
+
+button:focus-visible,
+summary:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px
+}
+
+.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--surface)
+}
+
+[data-theme=dark] .primary {
+  color: #101720
+}
+
+.danger {
+  color: var(--red)
+}
+
+header {
+  border-bottom: 1px solid var(--line);
+  background: var(--surface)
+}
+
+.top {
+  max-width: 1440px;
+  margin: auto;
+  padding: 22px 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px
+}
+
+.brand {
+  display: flex;
+  gap: 12px;
+  align-items: center
+}
+
+.brand svg {
+  width: 39px;
+  height: 39px;
+  padding: 8px;
+  border-radius: 12px;
+  background: var(--accent);
+  color: var(--surface)
+}
+
+h1 {
+  font-size: 24px;
+  letter-spacing: -1px;
+  line-height: 1.1;
+  margin: 0
+}
+
+h2 {
+  font-size: 19px;
+  letter-spacing: -.4px;
+  margin: 0 0 12px
+}
+
+h3 {
+  font-size: 15px;
+  margin: 0 0 8px
+}
+
+p {
+  margin: 8px 0
+}
+
+.muted,
+small {
+  color: var(--muted)
+}
+
+small {
+  font-size: 12px
+}
+
+.eyebrow {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1.6px;
+  font-weight: 700;
+  color: var(--muted)
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap
+}
+
+.memory-control {
+  display: flex;
+  align-items: center;
+  gap: 14px
+}
+
+.toggle {
+  min-width: 100px;
+  border: 0;
+  border-radius: 30px;
+  background: var(--red-bg);
+  color: var(--red);
+  display: flex;
+  align-items: center;
+  gap: 14px
+}
+
+.toggle::before {
+  content: "";
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: currentColor
+}
+
+.toggle[aria-checked=true] {
+  background: var(--green-bg);
+  color: var(--green);
+  flex-direction: row-reverse
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 5px 10px;
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--muted);
+  border: 1px solid var(--line)
+}
+
+.good {
+  color: var(--green);
+  background: var(--green-bg)
+}
+
+.bad {
+  color: var(--red);
+  background: var(--red-bg)
+}
+
+.warn {
+  color: var(--amber);
+  background: var(--amber-bg)
+}
+
+.health {
+  font-weight: 650;
+  font-size: 14px;
+  padding: 10px 14px;
+  border-radius: 99px
+}
+
+.statusbar {
+  max-width: 1440px;
+  margin: auto;
+  padding: 0 32px 16px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap
+}
+
+main {
+  max-width: 1440px;
+  margin: auto;
+  padding: 26px 32px 40px
+}
+
+.intro {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px
+}
+
+.intro p {
+  margin: 0
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: 22px;
+  align-items: start
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  padding: 24px;
+  min-width: 0
+}
+
+.hero {
+  border-top: 4px solid var(--accent);
+  min-height: 410px
+}
+
+.hero h2 {
+  font-size: 28px;
+  line-height: 1.3;
+  letter-spacing: -.8px;
+  margin: 18px 0
+}
+
+.hero .summary {
+  font-size: 21px;
+  line-height: 1.4;
+  font-weight: 600
+}
+
+.banner {
+  padding: 12px 14px;
+  border-radius: 10px;
+  margin: 16px 0
+}
+
+.chips {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0
+}
+
+.chips small {
+  min-width: 106px
+}
+
+.suggestion {
+  padding: 18px;
+  background: var(--tint);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  margin: 20px 0 14px
+}
+
+.suggestion h3 {
+  font-size: 21px
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap
+}
+
+.actions .primary {
+  flex: 1;
+  min-width: 150px
+}
+
+.steps {
+  display: flex;
+  gap: 5px;
+  margin: 14px 0 22px
+}
+
+.step {
+  flex: 1;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.3
+}
+
+.step::before {
+  content: "";
+  display: block;
+  height: 4px;
+  background: var(--line);
+  border-radius: 4px;
+  margin-bottom: 7px
+}
+
+.step.done::before {
+  background: var(--green)
+}
+
+.step.active {
+  color: var(--accent);
+  font-weight: 700
+}
+
+.step.active::before {
+  background: var(--accent)
+}
+
+.quiet {
+  text-align: center;
+  padding: 36px 12px
+}
+
+.quiet svg {
+  width: 64px;
+  height: 64px;
+  color: var(--green);
+  padding: 14px;
+  background: var(--green-bg);
+  border-radius: 50%
+}
+
+.quiet h2 {
+  font-size: 25px
+}
+
+.divider {
+  border-top: 1px solid var(--line);
+  margin-top: 18px;
+  padding-top: 14px
+}
+
+.attempt {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0
+}
+
+.attempt span:first-child {
+  flex: 1
+}
+
+.time {
+  font-variant-numeric: tabular-nums
+}
+
+.memory-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px;
+  margin: 12px 0;
+  background: var(--bg)
+}
+
+.verbatim {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.65;
+  margin: 12px 0
+}
+
+.match {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted)
+}
+
+meter {
+  width: 80px;
+  height: 7px;
+  accent-color: var(--green)
+}
+
+.panel-note {
+  font-size: 12px;
+  line-height: 1.6
+}
+
+.comparison {
+  margin: 22px 0;
+  border: 1px solid var(--accent);
+  background: var(--surface);
+  padding: 22px;
+  border-radius: 16px
+}
+
+.compare-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px
+}
+
+.compare-cell {
+  border-radius: 12px;
+  padding: 18px;
+  background: var(--bg)
+}
+
+.compare-cell.on {
+  background: var(--green-bg)
+}
+
+.stats {
+  display: flex;
+  gap: 26px;
+  flex-wrap: wrap
+}
+
+.stats strong {
+  font-size: 24px;
+  display: block;
+  letter-spacing: -1px
+}
+
+.secondary {
+  margin-top: 22px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  align-items: start
+}
+
+details {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  min-width: 0
+}
+
+summary {
+  cursor: pointer;
+  font-weight: 650;
+  padding: 16px 20px;
+  min-height: 54px
+}
+
+details .inside {
+  padding: 0 20px 20px
+}
+
+details details {
+  margin-top: 14px
+}
+
+.feed {
+  max-height: 320px;
+  overflow: auto
+}
+
+.event {
+  display: flex;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+  font-size: 13px
+}
+
+.avatar {
+  flex: 0 0 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: var(--tint);
+  color: var(--accent);
+  font-weight: 700
+}
+
+.event p {
+  margin: 0;
+  overflow-wrap: anywhere
+}
+
+.destinations {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px
+}
+
+.destination {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px
+}
+
+.destination strong {
+  display: block;
+  font-size: 22px
+}
+
+.mono {
+  font: 12px/1.6 ui-monospace, Consolas, monospace;
+  overflow-wrap: anywhere
+}
+
+.demo {
+  border: 1px dashed var(--muted);
+  border-radius: 14px;
+  padding: 18px 22px;
+  margin-top: 26px
+}
+
+.demo p {
+  font-size: 12px
+}
+
+.demo .row {
+  margin-top: 12px
+}
+
+.demo button:last-child {
+  margin-left: auto
+}
+
+input,
+textarea {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink)
+}
+
+textarea {
+  min-height: 130px;
+  resize: vertical
+}
+
+.ask-reply {
+  white-space: pre-wrap;
+  border-left: 3px solid var(--accent);
+  padding: 12px 16px;
+  margin-top: 16px;
+  background: var(--tint);
+  border-radius: 0 12px 12px 0
+}
+
+.notice {
+  padding: 12px 18px;
+  margin-bottom: 18px;
+  border-radius: 10px
+}
+
+.notice:empty {
+  display: none
+}
+
+.progress {
+  height: 5px;
+  background: var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+  margin-top: 12px
+}
+
+.progress div {
+  height: 100%;
+  background: var(--accent);
+  width: 0;
+  transition: width 1s linear
+}
+
+.footer {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 22px;
+  font-size: 12px;
+  color: var(--muted)
+}
+
+[hidden] {
+  display: none !important
+}
+
+@media(max-width:900px) {
+  .workspace {
+    grid-template-columns: 1fr
+  }
+
+  .top {
+    flex-wrap: wrap
+  }
+
+  .secondary {
+    grid-template-columns: 1fr
+  }
+
+  .top,
+  .statusbar {
+    padding-left: 20px;
+    padding-right: 20px
+  }
+
+  main {
+    padding: 22px 20px
+  }
+}
+
+@media(max-width:480px) {
+  .top {
+    gap: 18px;
+    padding: 20px 16px
+  }
+
+  .brand {
+    flex: 1
+  }
+
+  .brand small {
+    font-size: 10px
+  }
+
+  .memory-control {
+    width: 100%;
+    justify-content: space-between
+  }
+
+  .health {
+    font-size: 12px
+  }
+
+  .statusbar {
+    padding: 0 16px 14px
+  }
+
+  main {
+    padding: 20px 12px
+  }
+
+  .card {
+    padding: 20px 16px
+  }
+
+  .hero h2 {
+    font-size: 25px
+  }
+
+  .hero .summary {
+    font-size: 19px
+  }
+
+  .step {
+    font-size: 9px
+  }
+
+  .compare-cell {
+    padding: 12px
+  }
+
+  .stats {
+    gap: 10px
+  }
+
+  .stats strong {
+    font-size: 21px
+  }
+
+  .demo {
+    padding: 16px
+  }
+
+  .demo button {
+    width: 100%
+  }
+
+  .demo button:last-child {
+    margin: 0
+  }
+
+  .intro {
+    align-items: start
+  }
+
+  .footer {
+    gap: 12px
+  }
+
+  .actions button {
+    flex: 1
+  }
+
+  .comparison {
+    padding: 16px
+  }
+}
+
+@media(prefers-reduced-motion:reduce) {
+  * {
+    transition: none !important
+  }
+}
+
+/* Keep the primary decision within a laptop viewport; secondary context scrolls. */
+.top {
+  padding-top: 16px;
+  padding-bottom: 16px
+}
+
+.hero h2 {
+  font-size: 24px;
+  margin: 10px 0
+}
+
+.hero .summary {
+  font-size: 18px
+}
+
+.steps {
+  margin-bottom: 14px
+}
+
+.banner {
+  margin: 12px 0
+}
+
+.suggestion {
+  padding: 14px;
+  margin: 12px 0
+}
+
+.suggestion h3 {
+  font-size: 19px
+}
+
+.recall-scroll {
+  max-height: 290px;
+  overflow: auto;
+  scrollbar-gutter: stable
+}
+
+.recall-scroll .memory-card:first-child {
+  margin-top: 0
+}
+
+.notice {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  max-width: calc(100% - 32px);
+  width: max-content;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow)
+}
+
+@media(max-width:480px) {
+  .hero h2 {
+    font-size: 23px
+  }
+
+  .recall-scroll {
+    max-height: 380px
+  }
+
+  .notice {
+    bottom: 12px
+  }
+}
+/* Leave the Apply target visible on a 1366 x 768 laptop. */
+main{padding-top:18px}.intro{margin-bottom:12px}.hero{padding:18px 22px}.hero h2{margin:8px 0;font-size:22px}.hero .summary{font-size:17px}.hero .steps{margin-bottom:10px}.hero .banner{padding:10px 12px;margin:10px 0}.hero .suggestion{padding:12px;margin:10px 0}.hero .suggestion p{font-size:13px}.hero .chips{margin:6px 0}
+@media(max-width:480px){.hero{padding:18px 16px}.hero .summary{font-size:18px}}
+@media(max-width:480px){.top{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px}.brand{grid-column:1;grid-row:1}.brand small{font-size:11px;white-space:nowrap}#themeBtn{grid-column:2;grid-row:1}.health{grid-column:1/-1;grid-row:2;justify-content:center}.memory-control{grid-column:1/-1;grid-row:3}.intro{gap:12px}.intro>small{font-size:10px;min-width:70px}.footer{flex-wrap:wrap}}
+</style></head>
+<body>
+<header><div class="top"><div class="brand"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 13 10 18 20 6M4 5h8M4 9h5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><div><h1>FixOnce</h1><small>Every incident, fixed only once</small></div></div><div id="health" class="health badge" role="status">Connecting to your service…</div><div class="memory-control"><div><b>Team memory (Meko)</b><br><small id="memoryHint">Checking memory settings…</small></div><button id="mekoBtn" class="toggle" role="switch" aria-label="Team memory (Meko)" aria-checked="false" disabled>…</button></div><button id="themeBtn" aria-label="Switch to dark theme">◐</button></div><div id="backendState" class="statusbar"></div></header>
+<main><div class="intro"><div><span class="eyebrow">Your on-call workspace</span><p class="muted">A clear next step. The context to trust it.</p></div><small id="connection" role="status">Connecting…</small></div><div id="notice" role="status" aria-live="polite" class="notice"></div>
+<div class="workspace"><section class="card hero" aria-label="Current incident"><div id="phone"></div><div id="why" class="panel-note" aria-live="polite"></div></section><section class="card" aria-label="Incident memory"><div id="context"><h2>What FixOnce remembered</h2><p class="muted">Waiting for an incident.</p></div></section></div>
+<section id="comparison" class="comparison" hidden aria-label="Memory OFF versus ON comparison"></section>
+<div class="secondary"><details><summary>Shared team knowledge</summary><div id="team" class="inside feed">Loading…</div></details><details><summary>What left this machine</summary><div class="inside"><p class="panel-note muted">No FixOnce server or telemetry. These are the destinations reported by this instance.</p><div id="egress"></div><details><summary>Raw request log</summary><div id="rawlog" class="inside feed mono"></div></details><details><summary>Every Meko call</summary><div id="mekolog" class="inside feed mono"></div></details></div></details><details><summary>Incident timeline</summary><div id="timeline" class="inside feed"></div></details><details><summary>All incidents &amp; time to fix</summary><div id="incidents" class="inside feed"></div></details><details><summary>Ask about last night</summary><form id="askForm" class="inside"><label for="askInput">What would you like to know?</label><input id="askInput" value="What happened last night?" required maxlength="2000"><div class="row" style="margin-top:12px"><button id="askBtn" class="primary">Ask FixOnce</button><small>Answers use the history available to this instance.</small></div><div id="askOut" aria-live="polite"></div></form></details></div>
+<section id="simRow" class="demo" hidden><div class="eyebrow">Demo controls · simulation</div><p class="muted">These buttons break the demo shop. Reset clears incidents, keeps lessons, and keeps this page's comparison until reload.</p><div class="row"><button data-chaos="db_pool">Break: DB connections</button><button data-chaos="bad_deploy">Break: bad deploy</button><button data-chaos="memory_leak">Break: memory leak</button><button data-chaos="sale_on">Sale ON</button><button data-chaos="sale_off">Sale OFF</button><button id="resetBtn">Reset demo</button></div></section><div class="footer"><span>Built for the person on call.</span><span>Runs on your infrastructure.</span></div>
+</main>
+<script>
+'use strict';
+const $ = s => document.querySelector(s),
+  esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  } [c]));
+const statusLabel = {
+    open: 'Detected',
+    investigating: 'Investigating',
+    waiting_human: 'Waiting for you',
+    fixing: 'Fixing…',
+    resolved: 'Fixed',
+    escalated: 'Handed to a senior'
+  },
+  resultLabel = {
+    pending: 'Checking',
+    worked: 'Worked',
+    failed: 'Did not work',
+    blocked: 'Blocked'
+  };
+const sourceLabel = {
+  memory: "Your team's lesson",
+  knowledge_base: 'Shared team knowledge',
+  conversation: 'Past conversation',
+  stored: 'Saved lesson'
+};
+let current = null,
+  settings = null,
+  context = null,
+  editing = null,
+  refreshBusy = false,
+  teamBusy = false,
+  mutationBusy = false,
+  applying = null,
+  fixStart = 0,
+  whyId = null;
+const snapshots = new Map(),
+  renderKeys = new Map();
+const label = a => settings?.actions?.[a] || 'Suggested service action';
+const time = t => new Date(t * 1000).toLocaleTimeString([], {
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit'
+});
+const percent = n => n != null && Number.isFinite(Number(n)) ? Math.round(Math.max(0, Math.min(1, Number(n))) * 100) : null;
+
+function put(id, html) {
+  const node = $(id);
+  if (node && renderKeys.get(id) !== html) {
+    node.innerHTML = html;
+    renderKeys.set(id, html)
+  }
+}
+let noticeTimer;
+
+function notify(message = '', bad = false) {
+  clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(() => {
+    $('#notice').textContent = ''
+  }, 6500);
+  $('#notice').textContent = message;
+  $('#notice').className = 'notice ' + (bad ? 'bad' : 'good')
+}
+async function api(path, options = {}) {
+  const r = await fetch(path, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers
+    },
+    signal: AbortSignal.timeout(30000)
+  });
+  let body;
+  try {
+    body = await r.json()
+  } catch {
+    throw Error('The service returned an unreadable response. Please try again.')
+  }
+  if (!r.ok || body?.error) throw Error(body?.error || body?.detail || `Request failed (${r.status}). Please try again.`);
+  return body
+}
+const post = (path, body = {}) => api(path, {
+  method: 'POST',
+  body: JSON.stringify(body)
+});
+
+function renderStatus(st, metrics) {
+  settings = st;
+  $('#mekoBtn').disabled = mutationBusy;
+  $('#mekoBtn').setAttribute('aria-checked', String(st.meko_enabled));
+  $('#mekoBtn').textContent = st.meko_enabled ? 'ON' : 'OFF';
+  $('#memoryHint').textContent = st.meko_enabled ? 'ON = the agent can learn from history' : 'OFF = the agent has no history';
+  $('#simRow').hidden = !(st.simulation && st.chaos);
+  put('#backendState', `<span class="badge ${st.meko_backend==='meko'?'good':'warn'}">${st.meko_backend==='meko'?'Real Meko':'Offline stand-in, not Meko'}</span><span class="badge">${st.llm==='gemini'?'Gemini':'Built-in rules'}</span>${st.llm_fallbacks?`<span class="badge warn" title="${esc(st.llm_last_error)}" tabindex="0">Gemini unavailable ${esc(st.llm_fallbacks)}× · built-in rules answered</span>`:''}<span class="badge ${st.pending_writes?'warn':''}">${esc(st.pending_writes)} saves waiting</span><span class="badge">${st.redact?'Sensitive log details masked':'Log masking is OFF'}</span>${st.simulation?'<span class="badge">Simulation</span>':''}`);
+  if (metrics) {
+    const rate = percent(metrics.error_rate);
+    const failing = Number(metrics.error_rate) > .05;
+    $('#health').className = 'health badge ' + (failing ? 'bad' : 'good');
+    $('#health').textContent = `${metrics.service||'Service'} ${failing?'failing':'healthy'} · ${rate??'—'}% errors`
+  } else {
+    $('#health').className = 'health badge warn';
+    $('#health').textContent = 'Service health unavailable'
+  }
 }
 
 function renderPhone(i) {
-  if (!i) return;
-  const r = i.recall || {};
-  const seen = r.match ? `<span class="tag good">Seen before · ${Math.round((r.confidence || 0) * 100)}% sure</span>` : (r.meko_enabled ? '<span class="tag">Not seen before</span>' : '<span class="tag bad">No memory (Meko OFF)</span>');
-  const stale = r.stale ? `<div class="tag warn">Learned on ${esc(r.learned_on_version)}, now ${esc(i.version)}: may be outdated</div>` : "";
-  const worse = (r.failed || []).length ? `<div class="muted">Made it worse before: ${r.failed.map((a) => LABEL[a]).join(", ")}</div>` : "";
-  const buttons = i.status === "waiting_human" ? `<div class="row"><button class="primary" onclick="decide('apply')">Apply: ${esc(LABEL[i.proposed_action])}</button><button onclick="decide('why')">Why?</button><button onclick="decide('escalate')">Escalate</button></div>` : "";
-  $("#phone").innerHTML = `<div class="title">${esc(i.service)} is failing</div><div>${esc(i.summary)}</div><div class="row">${seen}</div>${stale}${worse}
-    ${i.blocked_reason ? `<div class="tag warn" style="margin-top:6px">${esc(i.blocked_reason)}</div>` : ""}
-    ${i.proposed_action ? `<p><b>Suggested:</b> ${esc(LABEL[i.proposed_action])}<br><span class="muted">${esc(i.proposal_reason)}</span></p>` : ""}
-    <div>Status: <b>${i.status}</b></div>${buttons}<div id="why" class="muted"></div>`;
+  if (!i) {
+    put('#phone', `<div class="quiet"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m5 12 4 4L19 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><h2>${$('#health').textContent.includes('healthy')?'All quiet. Your service is healthy.':'Watching your service.'}</h2><p class="muted">${$('#health').textContent.includes('failing')?'The service is failing. Waiting for the incident check…':'No incident needs your attention.'}</p>${settings?.simulation&&settings?.chaos?'<p class="panel-note muted">Use the simulation controls below to try an incident.</p>':''}</div>`);
+    put('#why', '');
+    return
+  }
+  const r = i.recall,
+    off = !i.meko_enabled,
+    fake = settings?.meko_backend !== 'meko';
+  const stage = {
+    open: 0,
+    investigating: 1,
+    waiting_human: 2,
+    fixing: 4,
+    resolved: 5,
+    escalated: 5
+  } [i.status] ?? 0;
+  const steps = ['Detected', off ? 'Memory OFF' : 'Checked memory', 'Fix suggested', 'Applying', 'Checking', i.status === 'escalated' ? 'Handed to a senior' : 'Fixed'];
+  const banner = off ? 'Memory is OFF: the agent has no history' : !r ? 'Checking past incidents…' : r.error ? 'Memory could not be reached' : r.match ? `Seen before · ${percent(r.confidence)}% match${r.learned_on_version?' · learned on '+esc(r.learned_on_version):''}` : 'New to us · no strong memory match';
+  const actionRows = (arr, title, cls) => arr?.length ? `<div class="chips"><small>${title}</small>${arr.map(a=>`<span class="badge ${cls}">${esc(label(a))}</span>`).join('')}</div>` : '';
+  put('#phone', `<div class="row" style="justify-content:space-between"><span class="eyebrow">${esc(i.service)} ${i.simulation?'· simulation':''}</span><span class="badge ${i.status==='resolved'?'good':i.status==='escalated'?'warn':''}">${statusLabel[i.status]||'Checking'}</span></div><div class="steps" aria-label="Incident progress">${steps.map((s,n)=>`<div class="step ${n<stage?'done':n===stage?'active':''}" ${n===stage?'aria-current="step"':''}>${s}</div>`).join('')}</div><h2>${i.status==='resolved'?'The fix worked.':i.status==='escalated'?'Time to bring in a senior.':'Your next move, with context.'}</h2><p class="summary">${['resolved','escalated'].includes(i.status)?'<small>What happened</small><br>':''}${esc(i.summary||'Checking what went wrong…')}</p><div class="banner ${off?'bad':r?.match?'good':'warn'}">${banner}${fake&&!off?'<div class="panel-note">Offline stand-in, not Meko · development history</div>':''}</div>${r?.stale?`<p class="banner warn">May be outdated: learned on ${esc(r.learned_on_version)}, now ${esc(i.version)}. Review before applying.</p>`:''}${!off?actionRows(r?.worked,'Worked before','good')+actionRows(r?.failed,'Made it worse','bad'):''}${i.blocked_reason?`<div class="banner warn"><b>Team rule</b><br>${esc(i.blocked_reason)}</div>`:''}${i.proposed_action&&['waiting_human','fixing'].includes(i.status)?`<div class="suggestion"><span class="eyebrow">Suggested fix</span><h3>${esc(label(i.proposed_action))}</h3><p class="muted">${esc(i.proposal_reason)}</p></div>`:''}${i.status==='waiting_human'?`<div class="actions"><button class="primary" data-decision="apply" ${applying===i.id?'disabled':''}>${applying===i.id?'Fixing…':'Apply fix'}</button><button data-decision="why">Why?</button><button class="danger" data-decision="escalate">Escalate</button></div>`:''}${i.status==='fixing'?'<div class="banner"><b>Fixing… checking that the service recovers.</b><p class="panel-note muted">Usually about 8 seconds. The server confirms the result.</p><div class="progress" role="progressbar" aria-label="Approximate check progress" aria-valuemin="0" aria-valuemax="100"><div id="checkProgress"></div></div></div>':''}<div class="divider"><div class="row" style="justify-content:space-between"><small>${i.attempts.length} ${i.attempts.length===1?'try':'tries'}</small><small class="time">${i.time_to_fix_s!=null?'Time to fix: '+esc(i.time_to_fix_s)+'s':i.status==='escalated'?'No confirmed fix':'Open for: <span id="elapsed">…</span>'}</small></div>${i.attempts.map(a=>`<div class="attempt"><span>${esc(label(a.action))}<br><small>${esc(a.note)}</small></span><span class="badge ${a.result==='worked'?'good':a.result==='failed'?'bad':''}">${resultLabel[a.result]||'Checking'}</span></div>`).join('')}</div>`);
+  if (whyId !== i.id) {
+    whyId = i.id;
+    put('#why', '')
+  }
 }
 
-const SOURCE = { memory: "memory", knowledge_base: "shared team knowledge", conversation: "past conversation" };
-const score = (s) => (s == null ? "-" : Number(s).toFixed(2));
-let editing = null;  // id of the lesson being corrected; pauses re-rendering of the panel
+function memoryItem(m, stored, index) {
+  const n = percent(m.score),
+    locked = m.promoted === true;
+  return `<article class="memory-card"><div class="row"><span class="badge">${esc(sourceLabel[m.source]||'Returned context')}</span>${m.text.startsWith('[seeded demo history]')?'<span class="badge warn">Seeded demo history</span>':''}${locked?'<span class="badge good">🔒 Shared with team</span>':''}</div>${n!==null?`<div class="match"><meter min="0" max="100" value="${n}" aria-label="Match strength"></meter>${n}% match</div>`:''}<div class="verbatim">${esc(m.text)}</div>${locked?'<p class="panel-note muted">Promoted lessons are locked in Meko</p>':stored&&m.id?`<div class="row"><button data-memory="correct" data-index="${index}">Correct</button><button class="danger" data-memory="forget" data-index="${index}">Forget</button><button data-memory="promote" data-index="${index}">Fix held: share with team</button></div>`:''}<div data-editor="${index}"></div></article>`
+}
 
 function renderContext(c) {
-  if (editing) return;
-  const rec = c.recalled.map((m) => `<div class="item"><span class="tag">recalled from ${SOURCE[m.source] || esc(m.source)} · score ${score(m.score)}</span>
-      ${m.promoted ? '<span class="tag good">promoted</span>' : ""} ${esc(m.text)}</div>`).join("");
-  const sto = c.stored.map((m) => `<div class="item"><span class="tag good">stored</span>
-      ${m.promoted ? '<span class="tag good">promoted: shared team knowledge, locked</span>' : ""} <span id="text-${esc(m.id)}">${esc(m.text)}</span>
-      ${m.id && !m.promoted ? `<div class="row"><button onclick="promote('${esc(m.id)}')">Fix held: promote to team</button><button onclick="correct('${esc(m.id)}')">Correct</button><button onclick="forget('${esc(m.id)}')">Forget</button></div>` : ""}
-      ${m.id && m.promoted ? '<div class="muted">Meko makes promotion one-way, so a promoted lesson can no longer be corrected or forgotten.</div>' : ""}</div>`).join("");
-  $("#context").innerHTML = (c.meko_enabled ? "" : '<div class="tag bad">Meko was OFF for this incident: nothing recalled, nothing stored.</div>') + (rec || "") + (sto || "") || "Nothing recalled or stored.";
+  if (editing !== null) return;
+  context = c;
+  const fake = settings?.meko_backend !== 'meko';
+  put('#context', `<span class="eyebrow">${fake?'Development history':'Memory, in plain sight'}</span><h2>What FixOnce remembered</h2>${!c?'<p class="muted">Past lessons will appear here when an incident is checked.</p>':!c.meko_enabled?'<p class="banner bad">Meko was OFF for this incident. Nothing was recalled or stored.</p>':`${fake?'<p class="panel-note warn banner">Offline stand-in, not Meko. These are development results.</p>':'<p class="panel-note muted">The exact text returned by Meko. Match strength is not a guarantee.</p>'}<div class="recall-scroll">${c.recalled.map((m,n)=>memoryItem(m,false,n)).join('')||'<p class="muted">No lessons recalled.</p>'}</div><div class="divider"><h2>What it learned</h2>${c.stored.map((m,n)=>memoryItem(m,true,n)).join('')||'<p class="muted">No stored lessons for this incident. New lessons appear after the outcome is checked.</p>'}</div>`}`)
 }
 
-async function renderTeam() {
-  const rows = await api("/lessons?promoted=true");
-  const off = $("#mekoState").dataset.on === "false";
-  $("#team").innerHTML = rows.map((m) => `<div class="item">${esc(m.text)}</div>`).join("")
-    || (off ? "Meko is OFF: shared knowledge is not read." : "Nothing promoted yet.");
-}
-
-function notice(r) {
-  $("#notice").innerHTML = r && r.error ? `<div class="tag bad" style="margin-bottom:8px">${esc(r.error)}</div>` : "";
-}
-
-async function decide(choice) {
-  if (!current) return;
-  if (choice === "why") {
-    const w = await api(`/incidents/${current.id}/decision`, { method: "POST", body: JSON.stringify({ choice }) });
-    $("#why").textContent = `${w.reason} ${w.blocked || ""}`;
-    return;
+function renderComparison(list) {
+  for (const i of list)
+    if (['resolved', 'escalated'].includes(i.status) && i.signature) snapshots.set(i.id, i);
+  const rows = [...snapshots.values()].sort((a, b) => b.opened_at - a.opened_at);
+  let pair;
+  for (const i of rows) {
+    const other = rows.find(j => j.signature === i.signature && j.meko_enabled !== i.meko_enabled);
+    if (other) {
+      pair = i.meko_enabled ? [other, i] : [i, other];
+      break
+    }
   }
-  api(`/incidents/${current.id}/decision`, { method: "POST", body: JSON.stringify({ choice, by: "on-call" }) });
-  setTimeout(refresh, 300);
-}
-async function promote(id) {
-  notice(await api(`/lessons/${id}/promote`, { method: "POST", body: JSON.stringify({ confirmed_by: "on-call" }) }));
-  refresh(); renderTeam();
-}
-async function forget(id) { notice(await api(`/lessons/${id}`, { method: "DELETE" })); refresh(); }
-function correct(id) {
-  editing = id;
-  const span = document.getElementById(`text-${id}`);
-  span.innerHTML = `<textarea id="edit-${esc(id)}" rows="3">${esc(span.textContent)}</textarea>
-    <div class="row"><button class="primary" onclick="saveCorrection('${esc(id)}')">Save correction</button><button onclick="editing = null; refresh()">Cancel</button></div>`;
-}
-async function saveCorrection(id) {
-  const text = document.getElementById(`edit-${id}`).value.trim();
-  editing = null;
-  if (text) notice(await api(`/lessons/${id}/correct`, { method: "POST", body: JSON.stringify({ text }) }));
-  refresh();
+  $('#comparison').hidden = !pair;
+  if (!pair) return;
+  put('#comparison', `<div class="row" style="justify-content:space-between"><h2>The difference memory makes</h2><span class="badge">Same incident pattern</span></div><div class="compare-grid">${pair.map(i=>`<div class="compare-cell ${i.meko_enabled?'on':''}"><span class="eyebrow">Team memory ${i.meko_enabled?'ON':'OFF'}</span><h3>${statusLabel[i.status]}</h3><div class="stats"><div><strong>${i.attempts.length}</strong><small>tries</small></div><div><strong>${i.time_to_fix_s==null?'—':esc(i.time_to_fix_s)+'s'}</strong><small>time to fix</small></div></div>${i.time_to_fix_s==null?'<small>No confirmed fix</small>':''}</div>`).join('')}</div><p class="panel-note muted">Observed results from /incidents in this page session. Reset keeps this comparison; reload clears it. ${settings?.meko_backend!=='meko'?'Offline stand-in results, not real Meko.':''}</p>`)
 }
 
-$("#mekoBtn").onclick = async () => { await api("/settings/meko", { method: "POST", body: JSON.stringify({ enabled: $("#mekoState").dataset.on !== "true" }) }); await refresh(); renderTeam(); };
-document.querySelectorAll("[data-chaos]").forEach((b) => (b.onclick = () => api(`/chaos/${b.dataset.chaos}`, { method: "POST" })));
-$("#resetBtn").onclick = async () => { await api("/api/demo/reset", { method: "POST" }); refresh(); };
-$("#askBtn").onclick = async () => { const r = await api("/ask", { method: "POST", body: JSON.stringify({ question: $("#askInput").value }) }); $("#askOut").textContent = r.answer; };
-refresh(); setInterval(refresh, 1500);
-renderTeam(); setInterval(renderTeam, 15000);  // one Meko call each time, so not every tick
-</script>
-</body>
-</html>
+function renderEgress(e) {
+  const r = e.redaction;
+  put('#egress', `<div class="destinations">${e.destinations.map(d=>`<div class="destination"><h3>${esc(d.name)}</h3><strong>${d.calls?esc(d.calls):'Nothing sent'}</strong>${d.calls?'<small>requests</small>':''}<p class="mono muted">${esc(d.host||'No external destination')}</p><small>${esc(d.why)}</small></div>`).join('')}</div><div class="divider"><h3>${r.on?'Masked before sending':'Warning: log masking is OFF'}</h3><div class="row">${Object.entries(r.masked).filter(([,n])=>n).map(([k,n])=>`<span class="badge good">${esc(n)} ${esc({email:'emails',ip:'IPs',secret:'secrets',card:'cards',phone:'phone numbers'}[k]||k)} masked</span>`).join('')||'<small>Nothing to mask yet</small>'}</div><p class="panel-note muted">${esc(r.lines)} log lines checked</p>${r.last?`<p class="mono">${esc(r.last)}</p>`:''}</div>`);
+  put('#rawlog', e.recent.slice().reverse().map(x => `<div class="divider">${time(x.t)} → ${esc(x.to)} · ${esc(x.op)} · ${x.ok?'OK':'Error'}<br>${esc(x.note)} ${x.chars!=null?'· '+esc(x.chars)+' characters':''}</div>`).join('') || 'Nothing sent yet.')
+}
+async function refresh() {
+  if (refreshBusy || mutationBusy) return;
+  refreshBusy = true;
+  try {
+    const [st, list, mr, er, lr] = await Promise.all([api('/api/status'), api('/incidents'), api('/metrics').catch(() => null), api('/api/egress'), api('/api/meko/log?limit=100')]);
+    renderStatus(st, mr);
+    const old = current;
+    current = list[0] || null;
+    if (current?.status === 'fixing') {
+      if (old?.status !== 'fixing' || old.id !== current.id) fixStart = Date.now()
+    } else if (applying === current?.id && (current?.status !== 'waiting_human' || old?.status === 'fixing')) applying = null;
+    renderPhone(current);
+    renderComparison(list);
+    const id = current?.id;
+    const c = id ? await api(`/incidents/${encodeURIComponent(id)}/context`) : null;
+    renderContext(c);
+    renderEgress(er);
+    put('#mekolog', lr.slice().reverse().map(x => `<div class="divider">${time(x.t)} · ${esc(x.agent)} · ${esc(x.op)} · ${x.ok?'OK':'Error'}<br>${esc(x.note)}</div>`).join('') || 'No Meko calls yet.');
+    put('#timeline', current?.timeline.slice().reverse().map(x => `<div class="event"><span class="avatar">${esc(x.who.slice(0,1).toUpperCase())}</span><div><small>${time(x.t)} · ${esc(({watcher:'Watcher',triage:'Triage',recall:'Recall',fixer:'Fixer',scribe:'Scribe','on-call':'You',system:'FixOnce'})[x.who]||x.who)}</small><p>${esc(x.what)}</p></div></div>`).join('') || '<p class="muted">No activity yet.</p>');
+    put('#incidents', list.map(i => `<div class="divider"><b>${esc(i.service)} · ${statusLabel[i.status]}</b><p class="panel-note">${esc(i.summary)}</p><small>Memory ${i.meko_enabled?'ON':'OFF'} · ${i.attempts.length} tries · ${i.time_to_fix_s==null?'No confirmed fix':esc(i.time_to_fix_s)+'s to fix'}</small></div>`).join('') || 'No incidents yet.');
+    $('#connection').textContent = 'Live · updated ' + time(Date.now() / 1000)
+  } catch (e) {
+    $('#connection').textContent = 'Connection interrupted · retrying';
+    notify(e.message, true)
+  } finally {
+    refreshBusy = false
+  }
+}
+async function teamRefresh() {
+  if (teamBusy) return;
+  teamBusy = true;
+  try {
+    if (settings && !settings.meko_enabled) {
+      put('#team', 'Meko is OFF: shared knowledge is not read.');
+      return
+    }
+    const rows = await api('/lessons?promoted=true');
+    put('#team', rows.map(m => `<div class="divider"><span class="badge good">🔒 Shared team knowledge</span><div class="verbatim">${esc(m.text)}</div></div>`).join('') || 'No lessons shared yet.')
+  } catch (e) {
+    put('#team', `<p class="bad">${esc(e.message)}</p>`)
+  } finally {
+    teamBusy = false
+  }
+}
+async function act(button, fn) {
+  if (mutationBusy) return;
+  mutationBusy = true;
+  button.disabled = true;
+  try {
+    await fn()
+  } catch (e) {
+    applying = null;
+    notify(e.message, true)
+  } finally {
+    mutationBusy = false;
+    if (button.isConnected) button.disabled = false;
+    await refresh()
+  }
+}
+$('#mekoBtn').onclick = e => act(e.currentTarget, async () => {
+  const s = await post('/settings/meko', {
+    enabled: !settings.meko_enabled
+  });
+  settings.meko_enabled = s.meko_enabled;
+  notify(s.meko_enabled ? 'Team memory is ON.' : 'Team memory is OFF. The agent has no history.');
+  if (!s.meko_enabled) put('#team', 'Meko is OFF: shared knowledge is not read.')
+});
+$('#phone').onclick = async e => {
+  const b = e.target.closest('[data-decision]');
+  if (!b || !current) return;
+  const id = current.id,
+    choice = b.dataset.decision;
+  if (choice === 'why') {
+    try {
+      const r = await post(`/incidents/${encodeURIComponent(id)}/decision`, {
+        choice
+      });
+      if (current?.id === id) put('#why', `<div class="banner"><b>Why this fix?</b><p>${esc(r.reason)}</p>${r.blocked?`<p class="warn">${esc(r.blocked)}</p>`:''}</div>`)
+    } catch (err) {
+      notify(err.message, true)
+    }
+    return
+  }
+  await act(b, async () => {
+    applying = choice === 'apply' ? id : null;
+    if (choice === 'apply') b.textContent = 'Fixing…';
+    const r = await post(`/incidents/${encodeURIComponent(id)}/decision`, {
+      choice,
+      by: 'on-call'
+    });
+    if (r.status === 'fixing') {
+      fixStart = Date.now();
+      notify('Fixing… waiting for the service check.')
+    } else {
+      applying = null;
+      notify(choice === 'escalate' ? 'Handed to a senior.' : statusLabel[r.status] || 'Decision saved.')
+    }
+  })
+};
+$('#context').onclick = async e => {
+  const b = e.target.closest('[data-memory]');
+  if (!b || !context) return;
+  const n = Number(b.dataset.index),
+    m = context.stored[n];
+  if (!m || m.promoted || !m.id) return;
+  const action = b.dataset.memory;
+  if (editing !== null && action !== 'correct') { notify('Save or cancel your correction first.'); return; }
+  if (action === 'correct') {
+    if (editing !== null) return;
+    editing = m.id;
+    const slot = $(`[data-editor="${n}"]`);
+    slot.innerHTML = `<form id="editForm" class="divider"><label for="correction">Correct this lesson</label><textarea id="correction" required>${esc(m.text)}</textarea><div class="row"><button class="primary">Save correction</button><button type="button" id="cancelEdit">Cancel</button></div><p id="editError" class="bad" role="status"></p></form>`;
+    $('#correction').focus();
+    $('#cancelEdit').onclick = () => {
+      editing = null;
+      renderKeys.delete('#context');
+      renderContext(context)
+    };
+    $('#editForm').onsubmit = ev => {
+      ev.preventDefault();
+      const text = $('#correction').value.trim();
+      if (!text) {
+        $('#editError').textContent = 'Please enter the corrected lesson.';
+        return
+      }
+      act(ev.submitter, async () => {
+        try {
+          await post(`/lessons/${encodeURIComponent(m.id)}/correct`, {
+            text
+          });
+          editing = null;
+          notify('Correction saved.')
+        } catch (err) {
+          $('#editError').textContent = err.message;
+          throw err
+        }
+      })
+    };
+    return
+  }
+  await act(b, async () => {
+    if (action === 'forget') await api(`/lessons/${encodeURIComponent(m.id)}`, {
+      method: 'DELETE'
+    });
+    else await post(`/lessons/${encodeURIComponent(m.id)}/promote`, {
+      confirmed_by: 'on-call'
+    });
+    notify(action === 'forget' ? 'Lesson forgotten.' : 'Lesson shared with the team. Promoted lessons are locked in Meko.');
+    renderKeys.delete('#context')
+  })
+};
+document.querySelectorAll('[data-chaos]').forEach(b => b.onclick = () => act(b, async () => {
+  await post(`/chaos/${b.dataset.chaos}`);
+  notify('Simulation started. Watching the demo shop for changes.')
+}));
+$('#resetBtn').onclick = e => act(e.currentTarget, async () => {
+  await post('/api/demo/reset');
+  applying = null;
+  editing = null;
+  whyId = null;
+  notify('Demo reset. Lessons kept; comparison kept until reload.');
+  put('#why', '')
+});
+$('#askForm').onsubmit = async e => {
+  e.preventDefault();
+  const b = $('#askBtn');
+  b.disabled = true;
+  put('#askOut', '<p class="muted">Looking through the available history…</p>');
+  try {
+    const r = await post('/ask', {
+      question: $('#askInput').value
+    });
+    put('#askOut', `<div class="ask-reply">${esc(r.answer)}</div>`)
+  } catch (err) {
+    put('#askOut', `<p class="bad">${esc(err.message)}</p>`)
+  } finally {
+    b.disabled = false
+  }
+};
+$('#themeBtn').onclick = () => {
+  const dark = document.documentElement.dataset.theme !== 'dark';
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  $('#themeBtn').setAttribute('aria-label', `Switch to ${dark?'light':'dark'} theme`)
+};
+setInterval(() => {
+  if (current) {
+    const elapsed = $('#elapsed');
+    if (elapsed) elapsed.textContent = Math.max(0, Math.floor(Date.now() / 1000 - current.opened_at)) + 's';
+    const progress = $('#checkProgress');
+    if (progress) {
+      const value = Math.min(95, (Date.now() - fixStart) / 8000 * 100);
+      progress.style.width = value + '%';
+      progress.parentElement.setAttribute('aria-valuenow', Math.round(value))
+    }
+  }
+}, 1000);
+refresh().then(teamRefresh);
+setInterval(refresh, 1500);
+setInterval(teamRefresh, 15000);
+</script></body></html>
