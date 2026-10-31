@@ -1,4 +1,4 @@
-"""Outgoing webhook (n8n / Slack / Telegram): plain-words messages for each step, signed, never blocking."""
+"""Outgoing webhook and Telegram alerts: plain-words messages for each step, signed, never blocking."""
 import asyncio
 import hashlib
 import hmac
