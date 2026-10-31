@@ -47,6 +47,7 @@ def index():
 @app.get("/api/status")
 def status():
     return {"meko_enabled": memory.enabled, "meko_backend": memory.mode, "llm": llm.mode,
+            "llm_fallbacks": llm.fallbacks, "llm_last_error": llm.last_error,
             "pending_writes": len(memory.pending_writes), "simulation": True}
 
 

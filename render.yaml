@@ -19,7 +19,7 @@ services:
       - key: MEKO_ENABLED
         value: "true"
       - key: GEMINI_MODEL
-        value: gemini-2.5-flash
+        value: gemini-3.8-flash
       - key: CHECK_SECONDS
         value: "8"
       - key: STORM_SECONDS
