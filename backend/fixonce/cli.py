@@ -62,6 +62,8 @@ def main(argv: list[str] | None = None) -> None:
                             help="http(s)://service-url, or pkg.module:object with the Target methods")
     sub.add_parser("seed", help="write the seeded demo history into your Meko datapack (once)")
     sub.add_parser("check", help="check every Meko call against your datapack")
+    for sp in sub.choices.values():  # `fixonce demo --env-file x` works as well as `fixonce --env-file x demo`
+        sp.add_argument("--env-file", default=argparse.SUPPRESS, help="read settings from this file if it exists")
     args = ap.parse_args(argv)
 
     load_env(args.env_file)
