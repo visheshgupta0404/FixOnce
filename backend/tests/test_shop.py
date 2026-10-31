@@ -19,7 +19,7 @@ def test_each_scenario_triages_and_heals_with_its_fix():
     for kind, (words, fix) in SCENARIOS.items():
         client.post("/reset")
         assert client.post(f"/chaos/{kind}").json()["simulation"] is True
-        time.sleep(0.05)
+        time.sleep(0.5)  # the leak starts right at the 5% threshold and climbs from there
         m = client.get("/metrics").json()
         assert m["simulation"] is True and m["error_rate"] > 0.05, kind
         logs = client.get("/logs").json()["lines"]
