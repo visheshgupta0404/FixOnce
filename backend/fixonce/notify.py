@@ -1,5 +1,8 @@
-"""Outgoing webhook: every incident step is POSTed as JSON to FIXONCE_WEBHOOK_URL, so n8n, Slack,
-WhatsApp, email or a pager can plug in without FixOnce knowing their tokens.
+"""Alerts for every incident step: a Telegram message straight from this process (TELEGRAM_BOT_TOKEN),
+and/or a JSON webhook (FIXONCE_WEBHOOK_URL) for Slack, email or a pager.
+
+Telegram is outgoing only (Bot API sendMessage), so it works behind a company firewall. With no
+TELEGRAM_CHAT_ID, FixOnce messages the last chat that pressed Start on the bot.
 
 Events: incident.proposed (a fix is waiting for a human), incident.resolved, incident.escalated.
 Each payload carries `text`, a ready-to-send message in plain words. With FIXONCE_WEBHOOK_SECRET set,
@@ -77,19 +80,55 @@ def payload(event: str, inc: Incident) -> dict:
     }
 
 
+TELEGRAM_API = "https://api.telegram.org"
+
+
 class Notifier:
     def __init__(self):
         self.calls: list[dict] = []   # shown in GET /api/egress
         self.transport: httpx.AsyncBaseTransport | None = None  # tests pass a mock
         self._tasks: set[asyncio.Task] = set()
+        self._chat_id: str | None = None  # found with getUpdates when TELEGRAM_CHAT_ID is empty
 
     def emit(self, event: str, inc: Incident) -> None:
-        """Fire and forget: the incident flow never waits on the webhook."""
-        if not settings.webhook_url:
-            return
-        task = asyncio.ensure_future(self._send(event, payload(event, inc)))
+        """Fire and forget: the incident flow never waits on Telegram or the webhook."""
+        body = payload(event, inc)
+        if settings.telegram_bot_token:
+            self._spawn(self._telegram(event, body["text"]))
+        if settings.webhook_url:
+            self._spawn(self._send(event, body))
+
+    def _spawn(self, coro) -> None:
+        task = asyncio.ensure_future(coro)
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
+
+    def _record(self, to: str, event: str, chars: int, ok: bool, note: str) -> None:
+        self.calls.append({"t": time.time(), "to": to, "op": event, "chars": chars, "ok": ok, "note": note})
+        self.calls = self.calls[-300:]
+
+    async def _telegram(self, event: str, text: str) -> None:
+        token = settings.telegram_bot_token
+        ok, note = False, ""
+        try:
+            async with httpx.AsyncClient(base_url=f"{TELEGRAM_API}/bot{token}", timeout=10, transport=self.transport) as c:
+                chat = settings.telegram_chat_id or self._chat_id
+                if not chat:
+                    r = await c.get("/getUpdates")
+                    chats = [u[k]["chat"]["id"] for u in r.json().get("result", []) for k in ("message", "my_chat_member")
+                             if isinstance(u.get(k), dict) and "chat" in u[k]]
+                    chat = self._chat_id = str(chats[-1]) if chats else None
+                if not chat:
+                    note = "no chat yet: open the bot in Telegram and press Start"
+                else:
+                    r = await c.post("/sendMessage", json={"chat_id": chat, "text": text,
+                                                           "disable_web_page_preview": True})
+                    ok, note = r.status_code < 400, f"HTTP {r.status_code}"
+        except Exception as e:  # Telegram being down must not touch the incident
+            note = (str(e).replace(token, "<token>")[:120]) or type(e).__name__  # never log the bot token
+        if not ok:
+            log.warning("telegram %s failed: %s", event, note)
+        self._record("telegram", event, len(text), ok, note)
 
     async def _send(self, event: str, body: dict) -> None:
         raw = json.dumps(body).encode()
@@ -105,8 +144,7 @@ class Notifier:
         except Exception as e:  # the receiver being down must not touch the incident
             note = str(e)[:120] or type(e).__name__
             log.warning("webhook %s failed: %s", event, note)
-        self.calls.append({"t": time.time(), "to": "webhook", "op": event, "chars": len(raw), "ok": ok, "note": note})
-        self.calls = self.calls[-300:]
+        self._record("webhook", event, len(raw), ok, note)
 
     async def drain(self) -> None:
         """Wait for webhooks in flight (tests, shutdown)."""

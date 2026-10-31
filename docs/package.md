@@ -92,7 +92,8 @@ from the repo root. The tests use a similar `PaymentsTarget` (`backend/tests/tes
 | `TARGET_URL` (or `SHOP_URL`) | `http://localhost:8001` | HTTP target; `inprocess` = the demo shop inside this process |
 | `FIXONCE_DEMO` | `true` (`false` under `serve`) | Demo simulation: chaos buttons, seeded history offline |
 | `FIXONCE_REDACT` | `true` | Mask personal data and secrets in logs before agents see them |
-| `FIXONCE_WEBHOOK_URL`, `FIXONCE_WEBHOOK_SECRET` | empty | POST every incident step as JSON (signed when a secret is set) to n8n, Slack, WhatsApp... See `docs/n8n-whatsapp.md` |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | empty | Telegram alerts for every incident step, sent from this process. See `docs/telegram.md` |
+| `FIXONCE_WEBHOOK_URL`, `FIXONCE_WEBHOOK_SECRET` | empty | POST every incident step as JSON (signed when a secret is set) to Slack, email or a pager |
 | `FIXONCE_PUBLIC_URL` | `http://localhost:8000` | The link put in alerts |
 | `ERROR_THRESHOLD`, `WATCH_INTERVAL_SECONDS`, `CHECK_SECONDS`, `MAX_FIX_ATTEMPTS` | `0.05`, `3`, `8`, `3` | When to open an incident, how often to look, how long to check a fix, and how many tries before escalating |
 

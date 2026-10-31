@@ -1,4 +1,4 @@
-"""Outgoing webhook (n8n / Slack / WhatsApp): plain-words messages for each step, signed, never blocking."""
+"""Outgoing webhook (n8n / Slack / Telegram): plain-words messages for each step, signed, never blocking."""
 import asyncio
 import hashlib
 import hmac
@@ -77,3 +77,27 @@ def test_a_dead_receiver_does_not_break_the_incident():
     asyncio.run(_run(True))
     assert store.all()[0].status == "resolved"
     assert notifier.calls and not notifier.calls[0]["ok"]
+
+
+def test_telegram_message_goes_to_the_chat_that_pressed_start():
+    settings.webhook_url = ""
+    settings.telegram_bot_token, settings.telegram_chat_id = "123:SECRET", ""
+    notifier._chat_id = None
+    tg: list[httpx.Request] = []
+
+    def bot(req: httpx.Request):
+        tg.append(req)
+        if req.url.path.endswith("/getUpdates"):
+            return httpx.Response(200, json={"ok": True, "result": [{"message": {"chat": {"id": 4242}}}]})
+        return httpx.Response(200, json={"ok": True})
+    notifier.transport = httpx.MockTransport(bot)
+    try:
+        asyncio.run(_run(True))
+    finally:
+        settings.telegram_bot_token = ""
+    msgs = [json.loads(r.content) for r in tg if r.url.path.endswith("/sendMessage")]
+    assert [m["chat_id"] for m in msgs] == ["4242", "4242"]       # chat found once, then reused
+    assert "Seen before (team memory)" in msgs[0]["text"] and msgs[1]["text"].startswith("✅ checkout fixed")
+    assert all(r.url.host == "api.telegram.org" for r in tg) and not sent   # no webhook was set
+    assert [c["to"] for c in notifier.calls] == ["telegram", "telegram"]
+    assert all("SECRET" not in c["note"] for c in notifier.calls)

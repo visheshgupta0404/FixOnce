@@ -118,8 +118,9 @@ The agents only ever propose an action from your `actions` list, and a human tap
 The page's **What left this machine** panel lists every request to Meko and the LLM as it happens.
 A complete adapter to copy: [examples/payments_target.py](examples/payments_target.py)
 (`fixonce serve --target examples.payments_target:Payments` from the repo root).
-Alerts: set `FIXONCE_WEBHOOK_URL` and every incident step is posted as JSON, with a ready-to-send
-message, to n8n, Slack or WhatsApp ([docs/n8n-whatsapp.md](docs/n8n-whatsapp.md)).
+Alerts: set `TELEGRAM_BOT_TOKEN` and the on-call gets every incident step on Telegram, sent straight
+from this process ([docs/telegram.md](docs/telegram.md)); `FIXONCE_WEBHOOK_URL` posts the same events as
+JSON for Slack, email or a pager.
 Details, the HTTP contract and every setting: [docs/package.md](docs/package.md).
 
 ## Architecture

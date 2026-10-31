@@ -112,6 +112,6 @@ def test_egress_lists_meko_llm_webhook_and_shows_masking(payments):
     client = TestClient(fixonce.create_app())
     asyncio.run(target.logs(5))
     e = client.get("/api/egress").json()
-    assert [d["name"] for d in e["destinations"]] == ["Meko", "Gemini", "Webhook"]
+    assert [d["name"] for d in e["destinations"]] == ["Meko", "Gemini", "Telegram", "Webhook"]
     assert all(d["host"] is None for d in e["destinations"])  # offline: nothing leaves at all
     assert e["redaction"]["masked"]["email"] >= 1 and "<email>" in e["redaction"]["last"]
