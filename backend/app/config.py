@@ -17,7 +17,7 @@ class Settings:
 
     # LLM
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
-    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
     llm_mode: str = os.getenv("LLM_MODE", "fake" if not os.getenv("GEMINI_API_KEY") else "gemini")
 
     # Demo shop and timings

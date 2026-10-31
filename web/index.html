@@ -87,7 +87,7 @@ async function refresh() {
   $("#mekoState").innerHTML = st.meko_enabled ? '<span class="on">ON</span>' : '<span class="off">OFF</span>';
   $("#mekoState").dataset.on = st.meko_enabled;
   $("#backendState").innerHTML = `Memory: ${st.meko_backend === "meko" ? "real Meko" : '<span class="tag bad">offline stand-in, not Meko</span>'}
-    · Model: ${esc(st.llm)}${st.pending_writes ? ` · <span class="tag warn">${st.pending_writes} Meko writes waiting to retry</span>` : ""}
+    · Model: ${esc(st.llm)}${st.llm_fallbacks ? ` <span class="tag warn" title="${esc(st.llm_last_error)}">Gemini unavailable ${st.llm_fallbacks}×: rule-based stand-in answered</span>` : ""}${st.pending_writes ? ` · <span class="tag warn">${st.pending_writes} Meko writes waiting to retry</span>` : ""}
     · The shop and the Break buttons are a simulation.`;
   const list = await api("/incidents");
   current = list[0] || null;
