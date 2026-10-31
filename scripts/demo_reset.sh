@@ -26,7 +26,8 @@ echo "incidents: $INCIDENTS"
 
 fail=0
 grep -q "\"meko_enabled\":$ENABLED" <<<"$STATUS" || { echo "FAIL: Meko switch is not $MEKO"; fail=1; }
-grep -q '"error_rate":0.003' <<<"$METRICS" || { echo "FAIL: shop is not healthy yet"; fail=1; }
+RATE="$(grep -o '"error_rate":[0-9.]*' <<<"$METRICS" | cut -d: -f2)"
+awk -v r="${RATE:-1}" 'BEGIN { exit !(r < 0.05) }' || { echo "FAIL: shop error rate is $RATE, not healthy"; fail=1; }
 [ "$INCIDENTS" = "[]" ] || { echo "FAIL: incidents not cleared"; fail=1; }
 grep -q '"meko_backend":"fake-meko"' <<<"$STATUS" && echo "WARNING: running on the offline fake memory, not real Meko"
 [ "$fail" = 0 ] && echo "OK: demo reset, Meko $MEKO, ready for the next judge"
