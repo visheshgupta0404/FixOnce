@@ -68,8 +68,13 @@ async def demo_reset():
 
     Stops the watcher and any fix being checked first: a watcher tick that read the old, broken
     metrics would otherwise open a stale incident right after the reset, and a half-checked fix
-    would finish and store a lesson."""
-    stopping = list(fixing.values())
+    would finish and store a lesson. A fix that already resolved or escalated is only saving its
+    lesson and postmortem to Meko, so that one is allowed to finish (up to 20 s)."""
+    done = {iid: t for iid, t in fixing.items()
+            if (inc := store.get(iid)) and inc.status in ("resolved", "escalated")}
+    if done:
+        await asyncio.wait(list(done.values()), timeout=20)
+    stopping = [t for t in fixing.values() if not t.done()]
     if orchestrator._watch_task:
         stopping.append(orchestrator._watch_task)
         orchestrator._watch_task = None

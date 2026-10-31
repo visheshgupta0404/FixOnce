@@ -50,3 +50,21 @@ def test_apply_returns_at_once_and_fixes_in_background():
             missing = await c.post("/incidents/nope/decision", json={"choice": "apply"})
             assert missing.status_code == 404
     asyncio.run(go())
+
+
+def test_reset_lets_a_resolved_fix_finish_saving_its_lesson():
+    async def go():
+        inc = await _open_incident()
+        add = memory.backend.add
+
+        async def slow_add(*a, **kw):                        # real Meko takes seconds to store
+            await asyncio.sleep(0.3)
+            return await add(*a, **kw)
+        memory.backend.add = slow_add
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=main.app), base_url="http://api") as c:
+            await c.post(f"/incidents/{inc.id}/decision", json={"choice": "apply"})
+            while inc.status != "resolved":                  # resolved is set before the lesson is saved
+                await asyncio.sleep(0.01)
+            await c.post("/api/demo/reset")
+            assert inc.lesson_ids                            # the reset waited for the lesson
+    asyncio.run(go())
