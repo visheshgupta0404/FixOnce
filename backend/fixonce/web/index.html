@@ -308,6 +308,21 @@ main {
   margin: 16px 0
 }
 
+.recur {
+  border: 1px solid var(--amber);
+  background: var(--amber-bg);
+  color: var(--ink)
+}
+
+.recur h3 {
+  margin: 0 0 6px;
+  color: var(--amber)
+}
+
+.recur p {
+  margin: 6px 0
+}
+
 .chips {
   display: flex;
   align-items: baseline;
@@ -845,7 +860,7 @@ main{padding-top:18px}.intro{margin-bottom:12px}.hero{padding:18px 22px}.hero h2
 <main><div class="intro"><div><span class="eyebrow">Your on-call workspace</span><p class="muted">A clear next step. The context to trust it.</p></div><small id="connection" role="status">Connecting…</small></div><div id="notice" role="status" aria-live="polite" class="notice"></div>
 <div class="workspace"><section class="card hero" aria-label="Current incident"><div id="phone"></div><div id="why" class="panel-note" aria-live="polite"></div></section><section class="card" aria-label="Incident memory"><div id="context"><h2>What FixOnce remembered</h2><p class="muted">Waiting for an incident.</p></div></section></div>
 <section id="comparison" class="comparison" hidden aria-label="Memory OFF versus ON comparison"></section>
-<div class="secondary"><details><summary>Shared team knowledge</summary><div id="team" class="inside feed">Loading…</div></details><details><summary>What left this machine</summary><div class="inside"><p class="panel-note muted">No FixOnce server or telemetry. These are the destinations reported by this instance.</p><div id="egress"></div><details><summary>Raw request log</summary><div id="rawlog" class="inside feed mono"></div></details><details><summary>Every Meko call</summary><div id="mekolog" class="inside feed mono"></div></details></div></details><details><summary>Incident timeline</summary><div id="timeline" class="inside feed"></div></details><details><summary>All incidents &amp; time to fix</summary><div id="incidents" class="inside feed"></div></details><details><summary>Ask about last night</summary><form id="askForm" class="inside"><label for="askInput">What would you like to know?</label><input id="askInput" value="What happened last night?" required maxlength="2000"><div class="row" style="margin-top:12px"><button id="askBtn" class="primary">Ask FixOnce</button><small>Answers use the history available to this instance.</small></div><div id="askOut" aria-live="polite"></div></form></details></div>
+<div class="secondary"><details><summary>Shared team knowledge</summary><div id="team" class="inside feed">Loading…</div></details><details id="followupsBox" hidden><summary>Open follow-ups <span id="followCount" class="badge warn"></span></summary><div id="followups" class="inside feed"></div></details><details><summary>What left this machine</summary><div class="inside"><p class="panel-note muted">No FixOnce server or telemetry. These are the destinations reported by this instance.</p><div id="egress"></div><details><summary>Raw request log</summary><div id="rawlog" class="inside feed mono"></div></details><details><summary>Every Meko call</summary><div id="mekolog" class="inside feed mono"></div></details></div></details><details><summary>Incident timeline</summary><div id="timeline" class="inside feed"></div></details><details><summary>All incidents &amp; time to fix</summary><div id="incidents" class="inside feed"></div></details><details><summary>Ask about last night</summary><form id="askForm" class="inside"><label for="askInput">What would you like to know?</label><input id="askInput" value="What happened last night?" required maxlength="2000"><div class="row" style="margin-top:12px"><button id="askBtn" class="primary">Ask FixOnce</button><small>Answers use the history available to this instance.</small></div><div id="askOut" aria-live="polite"></div></form></details></div>
 <section id="simRow" class="demo" hidden><div class="eyebrow">Demo controls · simulation</div><p class="muted">These buttons break the demo shop. Reset clears incidents, keeps lessons, and keeps this page's comparison until reload.</p><div class="row"><button data-chaos="db_pool">Break: DB connections</button><button data-chaos="bad_deploy">Break: bad deploy</button><button data-chaos="memory_leak">Break: memory leak</button><button data-chaos="sale_on">Sale ON</button><button data-chaos="sale_off">Sale OFF</button><button id="resetBtn">Reset demo</button></div></section><div class="footer"><span>Built for the person on call.</span><span>Runs on your infrastructure.</span></div>
 </main>
 <script>
@@ -891,6 +906,18 @@ let current = null,
 const snapshots = new Map(),
   renderKeys = new Map();
 const label = a => settings?.actions?.[a] || 'Suggested service action';
+const ordinal = n => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ({1: 'st', 2: 'nd', 3: 'rd'}[n % 10] || 'th'));
+const day = d => d ? new Date(d + 'T00:00:00').toLocaleDateString([], {day: 'numeric', month: 'short'}) : 'earlier';
+
+// "This keeps coming back": shown only when Meko found 2+ past incidents of this kind (recall.recurrence).
+function recurrenceCard(i) {
+  const rec = i.recall?.recurrence;
+  if (!i.meko_enabled || !rec || rec.count < 2) return '';
+  const quick = i.recall.worked?.[0];
+  const dates = [...(rec.dates || []).map(day), 'today'].join(', ');
+  const f = rec.followup;
+  return `<div class="banner recur" role="note"><h3>🔁 This is the ${ordinal(rec.count + 1)} time</h3><small>${esc(dates)}</small>${quick ? `<p>The quick fix works: <b>${esc(label(quick))}</b>.</p>` : ''}<p><b>Root cause (from team memory):</b> ${rec.root_cause ? esc(rec.root_cause) : 'not recorded yet'}</p>${rec.permanent_fix ? `<p><b>Suggested permanent fix:</b> ${esc(rec.permanent_fix)}</p>` : ''}${f ? `<p class="warn"><b>Follow-up open since ${esc(f.opened_at ? day(String(f.opened_at).slice(0, 10)) : 'earlier')}, still not done:</b> ${esc(f.text)}</p>` : `<button data-followup>Create follow-up for the permanent fix</button>`}</div>`
+}
 const time = t => new Date(t * 1000).toLocaleTimeString([], {
   hour: '2-digit',
   minute: '2-digit',
@@ -977,7 +1004,7 @@ function renderPhone(i) {
   const steps = ['Detected', off ? 'Memory OFF' : 'Checked memory', 'Fix suggested', 'Applying', 'Checking', i.status === 'escalated' ? 'Handed to a senior' : 'Fixed'];
   const banner = off ? 'Memory is OFF: the agent has no history' : !r ? 'Checking past incidents…' : r.error ? 'Memory could not be reached' : r.match ? `Seen before · ${percent(r.confidence)}% match${r.learned_on_version?' · learned on '+esc(r.learned_on_version):''}` : 'New to us · no strong memory match';
   const actionRows = (arr, title, cls) => arr?.length ? `<div class="chips"><small>${title}</small>${arr.map(a=>`<span class="badge ${cls}">${esc(label(a))}</span>`).join('')}</div>` : '';
-  put('#phone', `<div class="row" style="justify-content:space-between"><span class="eyebrow">${esc(i.service)} ${i.simulation?'· simulation':''}</span><span class="badge ${i.status==='resolved'?'good':i.status==='escalated'?'warn':''}">${statusLabel[i.status]||'Checking'}</span></div><div class="steps" aria-label="Incident progress">${steps.map((s,n)=>`<div class="step ${n<stage?'done':n===stage?'active':''}" ${n===stage?'aria-current="step"':''}>${s}</div>`).join('')}</div><h2>${i.status==='resolved'?'The fix worked.':i.status==='escalated'?'Time to bring in a senior.':'Your next move, with context.'}</h2><p class="summary">${['resolved','escalated'].includes(i.status)?'<small>What happened</small><br>':''}${esc(i.summary||'Checking what went wrong…')}</p><div class="banner ${off?'bad':r?.match?'good':'warn'}">${banner}${fake&&!off?'<div class="panel-note">Offline stand-in, not Meko · development history</div>':''}</div>${r?.stale?`<p class="banner warn">May be outdated: learned on ${esc(r.learned_on_version)}, now ${esc(i.version)}. Review before applying.</p>`:''}${!off?actionRows(r?.worked,'Worked before','good')+actionRows(r?.failed,'Made it worse','bad'):''}${i.blocked_reason?`<div class="banner warn"><b>Team rule</b><br>${esc(i.blocked_reason)}</div>`:''}${i.proposed_action&&['waiting_human','fixing'].includes(i.status)?`<div class="suggestion"><span class="eyebrow">Suggested fix</span><h3>${esc(label(i.proposed_action))}</h3><p class="muted">${esc(i.proposal_reason)}</p></div>`:''}${i.status==='waiting_human'?`<div class="actions"><button class="primary" data-decision="apply" ${applying===i.id?'disabled':''}>${applying===i.id?'Fixing…':'Apply fix'}</button><button data-decision="why">Why?</button><button class="danger" data-decision="escalate">Escalate</button></div>`:''}${i.status==='fixing'?'<div class="banner"><b>Fixing… checking that the service recovers.</b><p class="panel-note muted">Usually about 8 seconds. The server confirms the result.</p><div class="progress" role="progressbar" aria-label="Approximate check progress" aria-valuemin="0" aria-valuemax="100"><div id="checkProgress"></div></div></div>':''}<div class="divider"><div class="row" style="justify-content:space-between"><small>${i.attempts.length} ${i.attempts.length===1?'try':'tries'}</small><small class="time">${i.time_to_fix_s!=null?'Time to fix: '+esc(i.time_to_fix_s)+'s':i.status==='escalated'?'No confirmed fix':'Open for: <span id="elapsed">…</span>'}</small></div>${i.attempts.map(a=>`<div class="attempt"><span>${esc(label(a.action))}<br><small>${esc(a.note)}</small></span><span class="badge ${a.result==='worked'?'good':a.result==='failed'?'bad':''}">${resultLabel[a.result]||'Checking'}</span></div>`).join('')}</div>`);
+  put('#phone', `<div class="row" style="justify-content:space-between"><span class="eyebrow">${esc(i.service)} ${i.simulation?'· simulation':''}</span><span class="badge ${i.status==='resolved'?'good':i.status==='escalated'?'warn':''}">${statusLabel[i.status]||'Checking'}</span></div><div class="steps" aria-label="Incident progress">${steps.map((s,n)=>`<div class="step ${n<stage?'done':n===stage?'active':''}" ${n===stage?'aria-current="step"':''}>${s}</div>`).join('')}</div><h2>${i.status==='resolved'?'The fix worked.':i.status==='escalated'?'Time to bring in a senior.':'Your next move, with context.'}</h2><p class="summary">${['resolved','escalated'].includes(i.status)?'<small>What happened</small><br>':''}${esc(i.summary||'Checking what went wrong…')}</p><div class="banner ${off?'bad':r?.match?'good':'warn'}">${banner}${fake&&!off?'<div class="panel-note">Offline stand-in, not Meko · development history</div>':''}</div>${r?.stale?`<p class="banner warn">May be outdated: learned on ${esc(r.learned_on_version)}, now ${esc(i.version)}. Review before applying.</p>`:''}${recurrenceCard(i)}${!off?actionRows(r?.worked,'Worked before','good')+actionRows(r?.failed,'Made it worse','bad'):''}${i.blocked_reason?`<div class="banner warn"><b>Team rule</b><br>${esc(i.blocked_reason)}</div>`:''}${i.proposed_action&&['waiting_human','fixing'].includes(i.status)?`<div class="suggestion"><span class="eyebrow">Suggested fix</span><h3>${esc(label(i.proposed_action))}</h3><p class="muted">${esc(i.proposal_reason)}</p></div>`:''}${i.status==='waiting_human'?`<div class="actions"><button class="primary" data-decision="apply" ${applying===i.id?'disabled':''}>${applying===i.id?'Fixing…':'Apply fix'}</button><button data-decision="why">Why?</button><button class="danger" data-decision="escalate">Escalate</button></div>`:''}${i.status==='fixing'?'<div class="banner"><b>Fixing… checking that the service recovers.</b><p class="panel-note muted">Usually about 8 seconds. The server confirms the result.</p><div class="progress" role="progressbar" aria-label="Approximate check progress" aria-valuemin="0" aria-valuemax="100"><div id="checkProgress"></div></div></div>':''}<div class="divider"><div class="row" style="justify-content:space-between"><small>${i.attempts.length} ${i.attempts.length===1?'try':'tries'}</small><small class="time">${i.time_to_fix_s!=null?'Time to fix: '+esc(i.time_to_fix_s)+'s':i.status==='escalated'?'No confirmed fix':'Open for: <span id="elapsed">…</span>'}</small></div>${i.attempts.map(a=>`<div class="attempt"><span>${esc(label(a.action))}<br><small>${esc(a.note)}</small></span><span class="badge ${a.result==='worked'?'good':a.result==='failed'?'bad':''}">${resultLabel[a.result]||'Checking'}</span></div>`).join('')}</div>`);
   if (whyId !== i.id) {
     whyId = i.id;
     put('#why', '')
@@ -1056,13 +1083,36 @@ async function teamRefresh() {
       return
     }
     const rows = await api('/lessons?promoted=true');
-    put('#team', rows.map(m => `<div class="divider"><span class="badge good">🔒 Shared team knowledge</span><div class="verbatim">${esc(m.text)}</div></div>`).join('') || 'No lessons shared yet.')
+    put('#team', rows.map(m => `<div class="divider"><span class="badge good">🔒 Shared team knowledge</span><div class="verbatim">${esc(m.text)}</div></div>`).join('') || 'No lessons shared yet.');
+    followupsRefresh()
   } catch (e) {
     put('#team', `<p class="bad">${esc(e.message)}</p>`)
   } finally {
     teamBusy = false
   }
 }
+async function followupsRefresh() {
+  if (settings && !settings.meko_enabled) return;
+  try {
+    const r = await fetch('/followups', { signal: AbortSignal.timeout(30000) });
+    if (r.status === 404) { $('#followupsBox').hidden = true; return }  // backend without follow-ups yet
+    const rows = await r.json();
+    $('#followupsBox').hidden = false;
+    $('#followCount').textContent = rows.length || '';
+    put('#followups', rows.map(f => `<div class="divider"><span class="badge warn">${esc(f.service || 'service')} · open since ${esc(f.opened_at ? day(String(f.opened_at).slice(0, 10)) : 'earlier')}</span><div class="verbatim">${esc(f.text)}</div><button data-done="${esc(f.id)}">Done: permanent fix shipped</button></div>`).join('') || '<p class="muted">No open follow-ups.</p>')
+  } catch (e) {
+    put('#followups', `<p class="bad">${esc(e.message)}</p>`)
+  }
+}
+$('#followups').onclick = e => {
+  const b = e.target.closest('[data-done]');
+  if (!b) return;
+  act(b, async () => {
+    await api(`/lessons/${encodeURIComponent(b.dataset.done)}`, { method: 'DELETE' });
+    notify('Follow-up closed.');
+    followupsRefresh()
+  })
+};
 async function act(button, fn) {
   if (mutationBusy) return;
   mutationBusy = true;
@@ -1087,6 +1137,16 @@ $('#mekoBtn').onclick = e => act(e.currentTarget, async () => {
   if (!s.meko_enabled) put('#team', 'Meko is OFF: shared knowledge is not read.')
 });
 $('#phone').onclick = async e => {
+  const fb = e.target.closest('[data-followup]');
+  if (fb && current) {
+    const id = current.id;
+    await act(fb, async () => {
+      await post(`/incidents/${encodeURIComponent(id)}/followup`, { by: 'on-call' });
+      notify('Follow-up saved to team memory. FixOnce will remind you next time.');
+      followupsRefresh()
+    });
+    return
+  }
   const b = e.target.closest('[data-decision]');
   if (!b || !current) return;
   const id = current.id,
@@ -1215,6 +1275,7 @@ setInterval(() => {
     }
   }
 }, 1000);
+if (matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.dataset.theme = 'dark';
 refresh().then(teamRefresh);
 setInterval(refresh, 1500);
 setInterval(teamRefresh, 15000);
