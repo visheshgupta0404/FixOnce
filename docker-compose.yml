@@ -1,8 +1,10 @@
 services:
   shop:
     build: { context: ., dockerfile: shop/Dockerfile }
-    ports: ["8001:8001"]
+    # localhost only: Docker-published ports bypass a VM firewall, and only 8000 should be public
+    ports: ["127.0.0.1:8001:8001"]
     env_file: .env
+    restart: unless-stopped
   backend:
     build: { context: ., dockerfile: backend/Dockerfile }
     ports: ["8000:8000"]
@@ -10,9 +12,10 @@ services:
     environment:
       SHOP_URL: http://shop:8001
     depends_on: [shop]
+    restart: unless-stopped
   # Optional (Teammate B): live state in YugabyteDB. Start with: docker compose --profile yb up
   yugabytedb:
     profiles: ["yb"]
     image: yugabytedb/yugabyte:latest
     command: ["bin/yugabyted", "start", "--background=false"]
-    ports: ["5433:5433", "15433:15433"]
+    ports: ["127.0.0.1:5433:5433", "127.0.0.1:15433:15433"]
