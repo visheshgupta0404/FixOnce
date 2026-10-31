@@ -21,14 +21,18 @@ Built for the Meko challenge, Track A, at hackCBS 9.0. Deadline: submit by 10 AM
 - Setup in 5 commands or fewer (see README). Demo of 5 minutes max.
 
 ## Code map
-- `shop/app.py`: demo shop SIMULATION with chaos scenarios (Teammate B owns)
-- `backend/app/models.py`: the shared contract. Change only together, then promote the change
-- `backend/app/memory/`: the ONE door to Meko (`service.py`), MCP client, real + fake backends (Vedansh)
-- `backend/app/agents/`: triage, recall, fixer, scribe (Vedansh)
-- `backend/app/orchestrator.py`: incident flow + watcher (Vedansh)
-- `backend/app/main.py`: API endpoints from the contract (Teammate B owns)
-- `backend/app/store.py`: incident store, in-memory; may move to YugabyteDB (Teammate B)
-- `web/index.html`: the page judges see (Teammate C owns)
+FixOnce is one pip package, `backend/fixonce` (`pip install ./backend`, command `fixonce`). Companies run it
+inside their own infra (mentor feedback: no third-party server sees their data). See `docs/package.md`.
+- `backend/fixonce/demo/shop.py`: demo shop SIMULATION with chaos scenarios (Teammate B owns)
+- `backend/fixonce/models.py`: the shared contract. Change only together, then promote the change
+- `backend/fixonce/target.py`: the watched service (HTTP or Python adapter); `redact.py` masks logs first
+- `backend/fixonce/memory/`: the ONE door to Meko (`service.py`), MCP client, real + fake backends (Vedansh)
+- `backend/fixonce/agents/`: triage, recall, fixer, scribe (Vedansh)
+- `backend/fixonce/orchestrator.py`: incident flow + watcher (Vedansh)
+- `backend/fixonce/main.py`: API endpoints from the contract (Teammate B owns)
+- `backend/fixonce/store.py`: incident store, in-memory; may move to YugabyteDB (Teammate B)
+- `backend/fixonce/web/index.html`: the page judges see (shipped inside the package)
+- `backend/fixonce/__init__.py` (`configure`, `create_app`) and `cli.py`: the package's public surface
 
 ## Rules
 - Python 3.11+, FastAPI, small files, plain words in anything a user sees.

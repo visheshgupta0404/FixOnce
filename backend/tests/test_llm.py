@@ -2,7 +2,7 @@
 import asyncio
 import time
 
-from app import llm as llm_mod
+from fixonce import llm as llm_mod
 
 
 def test_gemini_failure_falls_back_and_cools_down(monkeypatch):

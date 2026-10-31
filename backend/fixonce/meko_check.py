@@ -1,6 +1,6 @@
 """First thing to run with a real key: proves the Meko connection and shows real response shapes.
 
-    cd backend && python -m app.meko_check
+    fixonce check   (or: python -m fixonce.meko_check)
 
 It lists Meko's tools, saves one test memory, searches for it, and prints the raw responses,
 so we can adjust `memory/backends.py` parsing if Meko's shapes differ from what we expect.

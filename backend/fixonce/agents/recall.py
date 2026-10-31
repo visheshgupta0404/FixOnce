@@ -26,7 +26,7 @@ def actions_in(text: str) -> tuple[list[str], list[str]]:
     """Read which safe actions a memory says worked or failed (used when Meko returns no metadata)."""
     worked, failed = [], []
     for clause in re.split(r"[.;\n]", text.lower()):
-        found = [a for a, words in SYNONYMS.items() if any(w in clause for w in words)]
+        found = [a for a in SAFE_ACTIONS if any(w in clause for w in SYNONYMS.get(a, [a]))]
         if not found:
             continue
         target = failed if any(b in clause for b in BAD) else worked if any(g in clause for g in GOOD) else None

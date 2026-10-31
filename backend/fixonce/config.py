@@ -20,8 +20,14 @@ class Settings:
     gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
     llm_mode: str = os.getenv("LLM_MODE", "fake" if not os.getenv("GEMINI_API_KEY") else "gemini")
 
-    # Demo shop and timings
-    shop_url: str = os.getenv("SHOP_URL", "http://localhost:8001")
+    # The service FixOnce watches (see target.py). SHOP_URL is the older name, kept for the demo.
+    target_url: str = os.getenv("TARGET_URL") or os.getenv("SHOP_URL", "http://localhost:8001")
+    # demo = the target is the demo shop SIMULATION: seeded history offline, chaos buttons shown
+    demo: bool = _bool("FIXONCE_DEMO", "true")
+    # mask emails, IPs, secrets, card and phone numbers in logs before agents, the LLM or Meko see them
+    redact: bool = _bool("FIXONCE_REDACT", "true")
+
+    # Timings
     watch_interval_s: float = float(os.getenv("WATCH_INTERVAL_SECONDS", "3"))
     error_threshold: float = float(os.getenv("ERROR_THRESHOLD", "0.05"))
     check_seconds: float = float(os.getenv("CHECK_SECONDS", "8"))

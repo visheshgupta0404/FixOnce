@@ -4,8 +4,8 @@ import time
 
 from fastapi.testclient import TestClient
 
-import shop.app as shop_app
-from app.agents.triage import _rule_based
+import fixonce.demo.shop as shop_app
+from fixonce.agents.triage import _rule_based
 
 client = TestClient(shop_app.app)
 SCENARIOS = {  # chaos kind -> (words in the triage signature, the right fix)
@@ -38,6 +38,6 @@ def test_healthy_shop_logs_traffic_without_symptoms():
 
 def test_inprocess_shop_client_for_one_container_deploys():
     import asyncio
-    from app.shop_client import ShopClient
-    c = ShopClient(base_url="inprocess")
+    from fixonce.target import HttpTarget
+    c = HttpTarget(base_url="inprocess")
     assert asyncio.run(c.metrics())["simulation"] is True

@@ -1,4 +1,5 @@
-"""FixOnce backend API. Endpoints follow the shared contract in the war-plan doc."""
+"""FixOnce API and on-call page. Endpoints follow the shared contract in the war-plan doc.
+Run it with `fixonce demo` / `fixonce serve`, or `uvicorn fixonce.main:app`."""
 from __future__ import annotations
 
 import asyncio
@@ -13,21 +14,21 @@ from .agents import scribe
 from .config import settings
 from .llm import llm
 from .memory import memory
-from .models import Ask, CorrectLesson, Decision, MekoSetting, PromoteLesson
+from .models import ACTION_LABELS, Ask, CorrectLesson, Decision, MekoSetting, PromoteLesson
 from .orchestrator import orchestrator
 from .seed import seed
-from .shop_client import shop
 from .store import store
+from .target import target
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("fixonce.api")
-WEB_DIR = Path(__file__).resolve().parents[2] / "web"
+WEB_DIR = Path(__file__).resolve().parent / "web"  # shipped inside the package
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if memory.mode == "fake-meko":
-        await seed()  # offline mode only; for real Meko run `python -m app.seed` once
+    if memory.mode == "fake-meko" and settings.demo:
+        await seed()  # offline demo only; for real Meko run `fixonce seed` once
     if settings.watch_interval_s > 0:
         orchestrator.start()
     yield
@@ -41,25 +42,28 @@ def index():
     page = WEB_DIR / "index.html"
     if page.exists():
         return FileResponse(page)
-    return {"ok": True, "note": "web/index.html not found"}
+    return {"ok": True, "note": "fixonce/web/index.html not found"}
 
 
 @app.get("/api/status")
 def status():
     return {"meko_enabled": memory.enabled, "meko_backend": memory.mode, "llm": llm.mode,
             "llm_fallbacks": llm.fallbacks, "llm_last_error": llm.last_error,
-            "pending_writes": len(memory.pending_writes), "simulation": True}
+            "pending_writes": len(memory.pending_writes), "simulation": target.simulation,
+            "actions": ACTION_LABELS, "redact": settings.redact}
 
 
 # ---- demo shop passthrough (labelled simulation) ----
 @app.post("/chaos/{kind}")
 async def chaos(kind: str):
-    return await shop.chaos(kind)
+    if not (target.simulation and target.supports("chaos")):
+        raise HTTPException(404, "chaos buttons exist only for the demo shop simulation")
+    return await target.chaos(kind)
 
 
 @app.get("/metrics")
 async def metrics():
-    return await shop.metrics()
+    return await target.metrics()
 
 
 @app.post("/api/demo/reset")
@@ -81,7 +85,8 @@ async def demo_reset():
     for task in stopping:
         task.cancel()
     await asyncio.gather(*stopping, return_exceptions=True)
-    await shop.reset()
+    if target.supports("reset"):
+        await target.reset()
     store.clear()
     orchestrator.armed = True
     if settings.watch_interval_s > 0:

@@ -9,17 +9,16 @@ os.environ.update({"MEKO_MODE": "fake", "LLM_MODE": "fake", "CHECK_SECONDS": "0.
 import httpx  # noqa: E402
 import pytest  # noqa: E402
 
-import shop.app as shop_app  # noqa: E402
-from app import orchestrator as orch_mod  # noqa: E402
-from app.agents.recall import actions_in  # noqa: E402
-from app.memory import memory  # noqa: E402
-from app.memory.backends import FakeMeko  # noqa: E402
-from app.seed import seed  # noqa: E402
-from app.shop_client import shop  # noqa: E402
-from app.store import store  # noqa: E402
+import fixonce.demo.shop as shop_app  # noqa: E402
+from fixonce import orchestrator as orch_mod  # noqa: E402
+from fixonce.agents.recall import actions_in  # noqa: E402
+from fixonce.memory import memory  # noqa: E402
+from fixonce.memory.backends import FakeMeko  # noqa: E402
+from fixonce.seed import seed  # noqa: E402
+from fixonce.target import HttpTarget, target  # noqa: E402
+from fixonce.store import store  # noqa: E402
 
-shop.transport = httpx.ASGITransport(app=shop_app.app)
-shop.base_url = "http://shop"
+shop = target.use(HttpTarget("http://shop", transport=httpx.ASGITransport(app=shop_app.app), simulation=True))
 
 
 @pytest.fixture(autouse=True)

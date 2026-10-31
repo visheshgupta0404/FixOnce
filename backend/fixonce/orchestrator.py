@@ -12,8 +12,8 @@ from .config import settings
 from .llm import LLMError
 from .memory import memory
 from .models import ACTION_LABELS, Attempt, Incident, MemoryItem
-from .shop_client import shop
 from .store import store
+from .target import target
 
 log = logging.getLogger("fixonce")
 
@@ -35,7 +35,7 @@ class Orchestrator:
     # ---- opening and analysing -------------------------------------------------
     async def open_incident(self, metrics: dict) -> Incident:
         inc = Incident(service=metrics.get("service", "checkout"), version=metrics.get("version", ""),
-                       meko_enabled=memory.enabled)
+                       meko_enabled=memory.enabled, simulation=target.simulation)
         inc.log("watcher", f"Error rate {round(metrics.get('error_rate', 0) * 100)}%: opened incident")
         store.save(inc)
         inc.conversation_id = await memory.start_conversation(f"Incident {inc.id} on {inc.service}")
@@ -44,9 +44,9 @@ class Orchestrator:
 
     async def analyse(self, inc: Incident, metrics: dict | None = None) -> None:
         inc.status = "investigating"
-        metrics = metrics or await shop.metrics()
-        logs = await shop.logs(20)
-        deploys = await shop.deploys()
+        metrics = metrics or await target.metrics()
+        logs = await target.logs(20)
+        deploys = await target.deploys()
         try:
             t = await triage_agent.triage(inc, metrics, logs, deploys)
         except LLMError as e:
@@ -113,7 +113,7 @@ class Orchestrator:
         inc.attempts.append(attempt)
         inc.status = "fixing"
         inc.log(by, f"Approved: {ACTION_LABELS[action]}")
-        await shop.run_action(action)
+        await target.run_action(action)
         ok, rate = await self._check()
         attempt.result = "worked" if ok else "failed"
         attempt.note = f"error rate after {settings.check_seconds:.0f}s: {round(rate * 100)}%"
@@ -128,13 +128,13 @@ class Orchestrator:
             self._escalate(inc, f"{len(inc.attempts)} fixes failed")
             await self._learn(inc)
             return
-        await self._propose(inc, await shop.metrics(), await shop.logs(20))
+        await self._propose(inc, await target.metrics(), await target.logs(20))
 
     async def _check(self) -> tuple[bool, float]:
         deadline = time.time() + settings.check_seconds
         rate = 1.0
         while True:
-            m = await shop.metrics()
+            m = await target.metrics()
             rate = m["error_rate"]
             if time.time() >= deadline:
                 return rate < settings.error_threshold, rate
@@ -190,7 +190,7 @@ class Orchestrator:
 
     # ---- watcher -----------------------------------------------------------------
     async def watch_once(self) -> Incident | None:
-        m = await shop.metrics()
+        m = await target.metrics()
         high = m["error_rate"] > settings.error_threshold
         if not high:
             self.armed = True
@@ -206,7 +206,7 @@ class Orchestrator:
         while True:
             try:
                 await self.watch_once()
-            except Exception as e:  # shop down etc. Keep watching.
+            except Exception as e:  # target down etc. Keep watching.
                 log.warning("watcher: %s", e)
             await asyncio.sleep(settings.watch_interval_s)
 

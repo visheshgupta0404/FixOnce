@@ -29,5 +29,5 @@ fi
 echo
 echo "Next: edit $DIR/.env (MEKO_API_KEY, MEKO_DATAPACK_ID, GEMINI_API_KEY), then"
 echo "  cd $DIR && docker compose up -d --build"
-echo "  docker compose exec backend python -m app.seed   # only if the product datapack is not seeded yet"
+echo "  docker compose exec backend python -m fixonce.seed   # only if the product datapack is not seeded yet"
 echo "  FIXONCE_URL=http://localhost:8000 scripts/demo_smoke.sh"

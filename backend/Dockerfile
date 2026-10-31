@@ -5,7 +5,6 @@ COPY backend/requirements.txt backend/requirements.txt
 # the cache mount keeps downloaded wheels, so a build that times out resumes instead of starting over
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r backend/requirements.txt
 COPY backend backend
-COPY web web
 WORKDIR /srv/backend
 EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "fixonce.main:app", "--host", "0.0.0.0", "--port", "8000"]

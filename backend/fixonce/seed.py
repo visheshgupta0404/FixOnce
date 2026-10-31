@@ -1,7 +1,7 @@
 """Seeded demo history, written INTO Meko through the same calls the product uses (A5).
 Every seeded lesson says it is seeded demo history, so nothing pretends to be real.
 
-Run once against the real product datapack:   cd backend && python -m app.seed
+Run once against the real product datapack:   fixonce seed   (or: python -m fixonce.seed)
 The fake backend seeds itself on startup.
 """
 from __future__ import annotations

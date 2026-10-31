@@ -2,8 +2,8 @@
 Real Meko returns those traces from context_search; this is the exact shape seen live."""
 import asyncio
 
-from app.agents import recall as recall_mod
-from app.models import Incident, MemoryItem
+from fixonce.agents import recall as recall_mod
+from fixonce.models import Incident, MemoryItem
 
 LESSON = MemoryItem(source="knowledge_base", score=0.9999, text=(
     "[seeded demo history] Lesson for checkout (v1.6): when checkout returns 503s because DB connections "

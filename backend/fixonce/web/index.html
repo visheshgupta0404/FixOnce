@@ -39,7 +39,7 @@
 <header>
   <h1>FixOnce <small>every incident, fixed only once</small></h1>
   <div class="switch">Meko memory: <span id="mekoState">…</span> <button id="mekoBtn">Toggle</button></div>
-  <div class="row" style="margin:0">
+  <div class="row" style="margin:0" id="simRow">
     <span class="muted">Simulation:</span>
     <button data-chaos="db_pool">Break: DB connections</button>
     <button data-chaos="bad_deploy">Break: bad deploy</button>
@@ -88,7 +88,9 @@ async function refresh() {
   $("#mekoState").dataset.on = st.meko_enabled;
   $("#backendState").innerHTML = `Memory: ${st.meko_backend === "meko" ? "real Meko" : '<span class="tag bad">offline stand-in, not Meko</span>'}
     · Model: ${esc(st.llm)}${st.llm_fallbacks ? ` <span class="tag warn" title="${esc(st.llm_last_error)}">Gemini unavailable ${st.llm_fallbacks}×: rule-based stand-in answered</span>` : ""}${st.pending_writes ? ` · <span class="tag warn">${st.pending_writes} Meko writes waiting to retry</span>` : ""}
-    · The shop and the Break buttons are a simulation.`;
+    · ${st.simulation ? "The shop and the Break buttons are a simulation." : "Watching your own service; logs are " + (st.redact ? "redacted" : "NOT redacted") + " before any agent sees them."}`;
+  $("#simRow").style.display = st.simulation ? "" : "none";
+  for (const [k, v] of Object.entries(st.actions || {})) LABEL[k] ??= v;
   const list = await api("/incidents");
   current = list[0] || null;
   renderPhone(current);
