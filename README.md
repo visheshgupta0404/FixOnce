@@ -38,7 +38,11 @@ Only port 8000 is published. The demo shop listens on 127.0.0.1:8001 for debuggi
 
 Between demo runs: `scripts/demo_reset.sh` (shop healthy, incidents cleared, Meko OFF; lessons in
 Meko are kept). `scripts/demo_smoke.sh` runs the Meko OFF vs ON flow through the API and prints PASS.
-Both take `FIXONCE_URL=http://<host>:8000` to point at the cloud VM.
+Both take `FIXONCE_URL=<url>` to point at the hosted copy.
+
+Free hosting (Render): New > Blueprint > this repo, enter the three keys when asked. `render.yaml`
+uses the one-container `Dockerfile` at the root (the shop runs inside the backend process).
+Free instances sleep after 15 idle minutes, so point a free uptime monitor at `/api/status`.
 
 ## Try it
 

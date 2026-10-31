@@ -34,3 +34,10 @@ def test_healthy_shop_logs_traffic_without_symptoms():
     lines = client.get("/logs").json()["lines"]
     assert len(lines) >= 5 and not any(line["level"] == "WARN" for line in lines)
     assert _rule_based(lines, client.get("/metrics").json(), {})["signature"].endswith("unknown reason")
+
+
+def test_inprocess_shop_client_for_one_container_deploys():
+    import asyncio
+    from app.shop_client import ShopClient
+    c = ShopClient(base_url="inprocess")
+    assert asyncio.run(c.metrics())["simulation"] is True
