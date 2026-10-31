@@ -60,7 +60,11 @@ Free instances sleep after 15 idle minutes, so point a free uptime monitor at `/
    avoids the steps that made it worse, and pauses the export job. Fixed first time.
 3. In the recall panel, see exactly what Meko returned and stored. Correct or forget the new lesson,
    then promote it: it joins the shared team knowledge panel and is locked from then on.
-4. Scroll to **What left this machine**: every request that went to Meko and to Gemini, and the
+4. Look at the orange card: **This is the 3rd time**. FixOnce counts the past incidents of this kind in
+   Meko, names the root cause from those lessons, and suggests the permanent fix. Tap **Create follow-up**:
+   it is stored in Meko, listed under Open follow-ups, and the next repeat says it is still not done.
+   "Every incident, fixed only once" means the quick fix stops being a habit.
+5. Scroll to **What left this machine**: every request that went to Meko and to Gemini, and the
    customer emails and IPs masked in the logs before anything was sent. Nothing else leaves.
 
 ## How Meko is used (and why)
@@ -72,6 +76,7 @@ Free instances sleep after 15 idle minutes, so point a free uptime monitor at `/
 | Promotion to shared knowledge | After a human confirms the fix held, `memory_promote`. Promotion is one-way in Meko, so a promoted lesson is shown as locked | Only verified fixes become team knowledge |
 | Sharing across agents and users | Four agents and every teammate's agents read promoted lessons | The morning shift gets the night shift's lessons |
 | Documents | Postmortems saved with `artifact_put`; decision traces with `conversation_add_message` | Every choice can be explained later |
+| Patterns across incidents | Recall counts the past lessons of the same kind (private and promoted) and reads the root cause from them; a follow-up for the permanent fix is a Meko memory that recall finds on the next repeat | A repeat should push the team to fix the cause, not just apply the quick fix faster |
 
 Everything shown as memory in the UI came back from a real Meko call (see "Every Meko call").
 The chaos buttons and the shop are a labelled simulation. No personal data is stored.

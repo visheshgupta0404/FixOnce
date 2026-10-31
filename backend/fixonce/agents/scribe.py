@@ -9,16 +9,27 @@ from ..memory import memory
 from ..models import ACTION_LABELS, Incident
 
 
+def _occurrence(inc: Incident) -> int:
+    rec = inc.recall.recurrence if inc.recall else None
+    return (rec.count if rec else 0) + 1
+
+
 def lesson_text(inc: Incident) -> str:
     worked = [a.action for a in inc.attempts if a.result == "worked"]
     failed = [a.action for a in inc.attempts if a.result == "failed"]
-    parts = [f"Lesson for {inc.service} ({inc.version}): when {inc.signature}"]
+    rec = inc.recall.recurrence if inc.recall else None
+    parts = [f"Lesson for {inc.service} ({inc.version}), on {time.strftime('%Y-%m-%d', time.localtime(inc.opened_at))}: "
+             f"when {inc.signature}"]
+    if rec and rec.root_cause:
+        parts.append(f"Root cause (from earlier lessons): {rec.root_cause.rstrip('.')}")
     if worked:
         parts.append(f"The fix that worked was {worked[0]} ({ACTION_LABELS[worked[0]].lower()})")
     if failed:
         parts.append(f"These made it worse or failed: {', '.join(failed)}")
     if not worked:
         parts.append("No safe action fixed it; it was escalated to a senior")
+    if _occurrence(inc) > 1:
+        parts.append(f"This was occurrence #{_occurrence(inc)}")
     return ". ".join(parts) + "."
 
 
@@ -32,6 +43,8 @@ async def learn(inc: Incident) -> None:
         "incident_id": inc.id,
         "worked": [a.action for a in inc.attempts if a.result == "worked"],
         "failed": [a.action for a in inc.attempts if a.result == "failed"],
+        "date": time.strftime("%Y-%m-%d", time.localtime(inc.opened_at)),
+        "occurrence": _occurrence(inc),
     }
     stored = await memory.save_lesson(text, meta, inc.conversation_id, agent="scribe")
     inc.stored.extend(stored)

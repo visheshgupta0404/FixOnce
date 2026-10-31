@@ -36,6 +36,15 @@ class MemoryItem(BaseModel):
     metadata: dict = Field(default_factory=dict)
 
 
+class Recurrence(BaseModel):
+    """"This keeps coming back": past incidents of the same kind that Meko returned (Meko ON only)."""
+    count: int = 0                     # past incidents of this kind found in Meko (this one NOT counted)
+    dates: list[str] = Field(default_factory=list)  # YYYY-MM-DD of those incidents, oldest first; "" = unknown
+    root_cause: str = ""               # one plain sentence, taken from the recalled lessons ("" = not recorded)
+    permanent_fix: str = ""            # one plain sentence: what would stop it coming back (agent suggestion)
+    followup: Optional[dict] = None    # {"id", "text", "opened_at"} when a follow-up is already open in Meko
+
+
 class RecallResult(BaseModel):
     meko_enabled: bool
     match: bool = False
@@ -46,6 +55,7 @@ class RecallResult(BaseModel):
     learned_on_version: Optional[str] = None
     stale: bool = False
     error: Optional[str] = None
+    recurrence: Optional[Recurrence] = None
 
 
 class Attempt(BaseModel):
@@ -101,6 +111,10 @@ class CorrectLesson(BaseModel):
 
 class PromoteLesson(BaseModel):
     confirmed_by: str = "on-call"
+
+
+class FollowUp(BaseModel):
+    by: str = "on-call"
 
 
 class Ask(BaseModel):

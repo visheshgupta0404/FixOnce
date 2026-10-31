@@ -6,6 +6,7 @@ import re
 from ..config import settings
 from ..memory import memory
 from ..models import SAFE_ACTIONS, Incident, MemoryItem, RecallResult
+from .recurrence import is_followup, recurrence
 
 SYNONYMS = {
     "pause_batch_job": ["pause_batch_job", "pause the batch", "pausing the batch", "paused the batch",
@@ -19,6 +20,7 @@ SYNONYMS = {
 }
 BAD = ("worse", "failed", "did not", "didn't", "no effect", "never", "avoid", "do not", "don't")
 GOOD = ("fixed", "worked", "resolved", "solved", "recovered", "fix that")
+MAX_TRACES = 3
 VERSION = re.compile(r"\bv\d+\.\d+(?:\.\d+)?\b")
 
 
@@ -45,6 +47,10 @@ def _confidence(items: list[MemoryItem]) -> float:
 async def recall(incident: Incident, current_version: str) -> RecallResult:
     query = f"{incident.service}: {incident.signature}"
     items, err = await memory.recall(query, agent="recall")
+    # Past decision traces come back from context_search too (one per agent per incident). Keep the first
+    # MAX_TRACES so the panel shows the lessons, not a wall of traces; lessons are never dropped.
+    traces = [it for it in items if it.source == "conversation"]
+    items = [it for it in items if it.source != "conversation" or it in traces[:MAX_TRACES]]
     result = RecallResult(meko_enabled=memory.enabled, items=items, error=err)
     if not items:
         return result
@@ -57,6 +63,8 @@ async def recall(incident: Incident, current_version: str) -> RecallResult:
             # Decision traces of past incidents ("match=True worked=[...] failed=[...]") come back from
             # context_search too. They are shown in the panel, but they are not lessons: parsing them
             # as text marks every action named on the line as failed, including the fix that worked.
+            continue
+        if is_followup(it):  # an open follow-up is a reminder, not a fix that worked or failed
             continue
         meta = it.metadata or {}
         w = meta.get("worked") or []
@@ -71,4 +79,7 @@ async def recall(incident: Incident, current_version: str) -> RecallResult:
     result.worked = [a for a in result.worked if a not in result.failed]
     result.stale = bool(result.learned_on_version and current_version and result.learned_on_version != current_version)
     result.match = result.confidence >= settings.fast_path_confidence and bool(result.worked)
+    # Counted on every recalled item, not only those above the relevance floor: a lesson saved tonight
+    # (mem0) scores lower than a promoted one (knowledge base), but it is still the same incident.
+    result.recurrence = await recurrence(incident, items)
     return result

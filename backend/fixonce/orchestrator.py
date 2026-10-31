@@ -191,6 +191,32 @@ class Orchestrator:
             inc.log(by, "Confirmed the fix held: lesson promoted to shared team knowledge")
         return {"promoted": lesson_id}
 
+    async def followup(self, incident_id: str, by: str) -> dict:
+        """Open a follow-up for the permanent fix of an incident that keeps coming back, stored in Meko."""
+        inc = store.get(incident_id)
+        if inc is None:
+            raise KeyError(incident_id)
+        rec = inc.recall.recurrence if inc.recall else None
+        if not memory.enabled:
+            return {"followup_id": None, "error": "Meko is OFF: follow-ups live in team memory."}
+        if not rec or rec.count < 2 or not rec.permanent_fix:
+            return {"followup_id": None, "error": "This incident has not repeated, so there is no permanent fix to follow up."}
+        if rec.followup:
+            return {"followup_id": rec.followup["id"], "text": rec.followup["text"], "note": "already open"}
+        today = time.strftime("%Y-%m-%d")
+        nth = rec.count + 1
+        text = (f"Follow-up for {inc.service}: {rec.permanent_fix.rstrip('.')}. Opened {today} after the "
+                f"{nth}{'th' if 11 <= nth % 100 <= 13 else {1: 'st', 2: 'nd', 3: 'rd'}.get(nth % 10, 'th')} "
+                f"repeat of: {inc.signature}.")
+        await self._written(inc)
+        stored = await memory.save_followup(text, {"service": inc.service, "signature": inc.signature,
+                                                   "opened_at": today, "incident_id": inc.id}, inc.conversation_id)
+        if not stored or not stored[0].id:
+            return {"followup_id": None, "error": "Meko did not confirm the follow-up (unreachable; it will retry)."}
+        rec.followup = {"id": stored[0].id, "text": text, "opened_at": today}
+        inc.log(by, "Opened a follow-up for the permanent fix in team memory")
+        return {"followup_id": stored[0].id, "text": text}
+
     async def forget(self, lesson_id: str) -> dict:
         result = await memory.forget(lesson_id)
         if isinstance(result, dict) and result.get("ok") is False:

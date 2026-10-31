@@ -24,3 +24,5 @@ Vedansh: ask your Claude Code (connected to Meko) to save and promote each line 
 19. A target brings its own action catalog via fixonce.configure(actions=...); the fixer only proposes names from it. The 5 demo actions are the default.
 20. Logs are redacted in-process (emails, IPs, secrets, card and phone numbers) before agents, the LLM or Meko see them; FIXONCE_REDACT=true by default.
 21. Commands: fixonce demo | serve --target | seed | check. TARGET_URL replaces SHOP_URL (both read). FIXONCE_DEMO=false for real targets (no chaos, no seeded history).
+22. "This keeps coming back": RecallResult.recurrence = {count, dates, root_cause, permanent_fix, followup}; shown when Meko is ON and count >= 2. POST /incidents/{id}/followup opens a follow-up (a Meko memory, kind "followup", written by scribe); GET /followups lists them; DELETE /lessons/{id} closes one.
+23. Lessons carry a date (text "on YYYY-MM-DD" and metadata) and "This was occurrence #N"; seeded history includes a second db_pool outage on 2026-10-02 (`fixonce seed --only 2026-10-02` for datapacks seeded before it).

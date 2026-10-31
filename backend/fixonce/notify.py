@@ -46,6 +46,14 @@ def message(event: str, inc: Incident) -> str:
         lines.append(seen)
     else:
         lines.append("New to us: no matching lesson in team memory.")
+    rec = r.recurrence if r and r.meko_enabled else None
+    if rec and rec.count >= 2:
+        nth = rec.count + 1
+        line = f"🔁 This is the {nth}{'th' if 11 <= nth % 100 <= 13 else {1: 'st', 2: 'nd', 3: 'rd'}.get(nth % 10, 'th')} time."
+        if rec.root_cause:
+            line += f" Root cause: {rec.root_cause}"
+        line += " Follow-up still open." if rec.followup else f" Permanent fix: {rec.permanent_fix}"
+        lines.append(line)
     tried = [a for a in inc.attempts if a.result == "failed"]
     if tried:
         lines.append(f"Already tried: {', '.join(_label(a.action) for a in tried)}.")
@@ -64,6 +72,7 @@ def payload(event: str, inc: Incident) -> dict:
         "proposed_action": inc.proposed_action, "proposed_label": _label(inc.proposed_action),
         "reason": inc.proposal_reason, "attempts": [{"action": a.action, "result": a.result} for a in inc.attempts],
         "time_to_fix_s": inc.time_to_fix_s, "simulation": inc.simulation,
+        "recurrence": r.recurrence.model_dump() if r and r.recurrence else None,
         "url": settings.public_url, "text": message(event, inc),
     }
 

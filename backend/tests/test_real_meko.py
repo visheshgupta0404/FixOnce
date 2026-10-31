@@ -57,6 +57,8 @@ def test_off_vs_on_through_real_meko_path(sse):
     assert on.lesson_ids                                              # lesson stored with a real id
     assert "context_search" in mock_meko.STATE["calls"]
     assert any(i.source == "knowledge_base" for i in on.recall.items)  # seeded lessons are promoted
+    rec = on.recall.recurrence                                          # promoted lessons are counted too
+    assert rec and rec.count == 2 and "2026-10-02" in rec.dates and "export job" in rec.root_cause
     traces = mock_meko.STATE["conversations"][on.conversation_id]       # decision traces reached Meko
     assert {json.loads(t["metadata"])["decided_by"] for t in traces} >= {"triage", "recall", "fixer"}
     assert all(e["ok"] for e in memory.log if e["op"] == "decision_trace")

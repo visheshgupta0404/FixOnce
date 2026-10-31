@@ -12,10 +12,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 
 from .agents import scribe
+from .agents.recurrence import followup_row
 from .config import settings
 from .llm import llm
 from .memory import memory
-from .models import ACTION_LABELS, Ask, CorrectLesson, Decision, MekoSetting, PromoteLesson
+from .models import ACTION_LABELS, Ask, CorrectLesson, Decision, FollowUp, MekoSetting, PromoteLesson
 from .notify import notifier
 from .orchestrator import orchestrator
 from .redact import stats as redaction
@@ -153,6 +154,21 @@ async def decision(incident_id: str, body: Decision):
     fixing[incident_id] = task
     task.add_done_callback(lambda t: _apply_done(incident_id, t))
     return {"status": "fixing"}
+
+
+@app.post("/incidents/{incident_id}/followup")
+async def followup(incident_id: str, body: FollowUp):
+    """Open a follow-up for the permanent fix of an incident that keeps coming back (stored in Meko)."""
+    try:
+        return await orchestrator.followup(incident_id, body.by)
+    except KeyError:
+        raise HTTPException(404, "no such incident")
+
+
+@app.get("/followups")
+async def followups():
+    """Open follow-ups read from Meko. Closing one = DELETE /lessons/{id}."""
+    return [followup_row(m) for m in await memory.followups()]
 
 
 # ---- Meko switch and lessons ----

@@ -95,6 +95,17 @@ class MemoryService:
                                    metadata=metadata, conversation_id=conversation_id)
         return result or []
 
+    async def save_followup(self, text: str, metadata: dict, conversation_id: str | None) -> list[MemoryItem]:
+        """A follow-up for the permanent fix, written as "scribe" so the on-call can close (forget) it later."""
+        result = await self._write("save_followup", "scribe", "add", text, agent_id="scribe",
+                                   metadata={"kind": "followup", **metadata}, conversation_id=conversation_id)
+        return result or []
+
+    async def followups(self) -> list[MemoryItem]:
+        """Open follow-ups: every follow-up memory still in Meko."""
+        return [m for m in await self.recent(None, agent="web")
+                if (m.metadata or {}).get("kind") == "followup" or m.text.startswith("Follow-up for ")]
+
     async def promote(self, memory_ids: list[str], conversation_id: str | None, agent: str = "scribe"):
         return await self._write("promote", agent, "promote", memory_ids, agent_id=agent,
                                  conversation_id=conversation_id)

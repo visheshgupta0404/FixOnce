@@ -60,7 +60,8 @@ def main(argv: list[str] | None = None) -> None:
         if name == "serve":
             sp.add_argument("--target", required=True,
                             help="http(s)://service-url, or pkg.module:object with the Target methods")
-    sub.add_parser("seed", help="write the seeded demo history into your Meko datapack (once)")
+    sp_seed = sub.add_parser("seed", help="write the seeded demo history into your Meko datapack (once)")
+    sp_seed.add_argument("--only", help="only the seeded lessons of this date, e.g. 2026-10-02")
     sub.add_parser("check", help="check every Meko call against your datapack")
     for sp in sub.choices.values():  # `fixonce demo --env-file x` works as well as `fixonce --env-file x demo`
         sp.add_argument("--env-file", default=argparse.SUPPRESS, help="read settings from this file if it exists")
@@ -81,7 +82,7 @@ def main(argv: list[str] | None = None) -> None:
             _serve(args.host, args.port, load_target(args.target))
     elif args.cmd == "seed":
         from .seed import seed
-        print("seeded memory ids:", asyncio.run(seed()))
+        print("seeded memory ids:", asyncio.run(seed(only=args.only)))
     elif args.cmd == "check":
         from .meko_check import main as check
         asyncio.run(check())

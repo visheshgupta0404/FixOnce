@@ -916,7 +916,7 @@ function recurrenceCard(i) {
   const quick = i.recall.worked?.[0];
   const dates = [...(rec.dates || []).map(day), 'today'].join(', ');
   const f = rec.followup;
-  return `<div class="banner recur" role="note"><h3>🔁 This is the ${ordinal(rec.count + 1)} time</h3><small>${esc(dates)}</small>${quick ? `<p>The quick fix works: <b>${esc(label(quick))}</b>.</p>` : ''}<p><b>Root cause (from team memory):</b> ${rec.root_cause ? esc(rec.root_cause) : 'not recorded yet'}</p>${rec.permanent_fix ? `<p><b>Suggested permanent fix:</b> ${esc(rec.permanent_fix)}</p>` : ''}${f ? `<p class="warn"><b>Follow-up open since ${esc(f.opened_at ? day(String(f.opened_at).slice(0, 10)) : 'earlier')}, still not done:</b> ${esc(f.text)}</p>` : `<button data-followup>Create follow-up for the permanent fix</button>`}</div>`
+  return `<div class="banner recur" role="note"><h3>🔁 This is the ${ordinal(rec.count + 1)} time</h3><small>${esc(dates)}</small>${quick ? `<p>The quick fix works: <b>${esc(label(quick))}</b>.</p>` : ''}<p><b>Root cause (from team memory):</b> ${rec.root_cause ? esc(rec.root_cause) : 'not recorded yet'}</p>${rec.permanent_fix ? `<p><b>Suggested permanent fix:</b> ${esc(rec.permanent_fix)}</p>` : ''}${f ? `<p class="warn"><b>Follow-up open since ${esc(f.opened_at ? day(String(f.opened_at).slice(0, 10)) : 'earlier')}, still not done.</b> It is listed under Open follow-ups.</p>` : `<button data-followup>Create follow-up for the permanent fix</button>`}</div>`
 }
 const time = t => new Date(t * 1000).toLocaleTimeString([], {
   hour: '2-digit',
