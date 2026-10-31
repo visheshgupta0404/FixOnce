@@ -71,6 +71,7 @@ class RealMeko:
         self.client = MekoMCP(url, api_key, transport=transport)
         self.datapack_id = datapack_id or None
         self._default_cid: str | None = None
+        self._conv_owner: dict[str, str] = {}  # conversation id -> agent that created it
 
     def _dp(self, **kw) -> dict:
         kw["datapack_id"] = self.datapack_id
@@ -153,20 +154,27 @@ class RealMeko:
 
     async def conversation(self, title: str, agent_id: str) -> str | None:
         payload = await self.client.call("conversation_create", self._dp(title=title, agent_id=agent_id))
+        cid = None
         if isinstance(payload, dict):
-            for k in ("conversation_id", "id"):
-                if payload.get(k):
-                    return str(payload[k])
+            cid = next((str(payload[k]) for k in ("conversation_id", "id") if payload.get(k)), None)
             for v in payload.values():
-                if isinstance(v, dict) and (v.get("conversation_id") or v.get("id")):
-                    return str(v.get("conversation_id") or v.get("id"))
-        return None
+                if cid is None and isinstance(v, dict) and (v.get("conversation_id") or v.get("id")):
+                    cid = str(v.get("conversation_id") or v.get("id"))
+        if cid:
+            self._conv_owner[cid] = agent_id
+        return cid
 
     async def message(self, conversation_id: str, agent_id: str, input: str, output: str,
                       reasoning: str, plan: list[str]) -> Any:
-        return await self.client.call("conversation_add_message", self._dp(
-            conversation_id=conversation_id, agent_id=agent_id, input=input, output=output,
-            reasoning=reasoning, plan=plan))
+        # Meko only lets the agent that created a conversation add to it, so write as that agent
+        # and record which agent actually made the decision in the message metadata.
+        payload = await self.client.call("conversation_add_message", self._dp(
+            conversation_id=conversation_id, agent_id=self._conv_owner.get(conversation_id, agent_id),
+            input=input, output=output, reasoning=reasoning, plan=plan,
+            metadata=json.dumps({"decided_by": agent_id})))
+        if isinstance(payload, dict) and payload.get("error"):  # Meko reports this as a normal result
+            raise MekoError(f"conversation_add_message: {payload.get('detail') or payload['error']}")
+        return payload
 
     async def artifact(self, filename: str, text: str, agent_id: str, conversation_id: str | None) -> str:
         payload = await self.client.call("artifact_put", self._dp(

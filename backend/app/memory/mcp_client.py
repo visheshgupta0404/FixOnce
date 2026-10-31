@@ -10,6 +10,7 @@ Usage:
 """
 from __future__ import annotations
 
+import asyncio
 import itertools
 import json
 from typing import Any
@@ -74,7 +75,12 @@ class MekoMCP:
             rid = next(self._ids)
             body["id"] = rid
         async with httpx.AsyncClient(timeout=self.timeout, transport=self.transport) as http:
-            resp = await http.post(self.url, headers=self._headers(), json=body)
+            try:
+                resp = await http.post(self.url, headers=self._headers(), json=body)
+            except (httpx.ConnectError, httpx.ConnectTimeout):
+                # The request never reached Meko, so one retry cannot write anything twice.
+                await asyncio.sleep(0.5)
+                resp = await http.post(self.url, headers=self._headers(), json=body)
         if resp.status_code == 404 and self.session_id and method != "initialize":
             # session expired: start again once
             self.session_id = None

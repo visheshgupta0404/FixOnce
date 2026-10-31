@@ -12,12 +12,12 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 
 app = FastAPI()
-STATE = {"memories": [], "conversations": {}, "artifacts": {}, "sse": False, "add_returns_ids": True,
+STATE = {"memories": [], "conversations": {}, "conv_owner": {}, "artifacts": {}, "sse": False, "add_returns_ids": True,
          "calls": []}
 
 
 def reset(sse=False, add_returns_ids=True):
-    STATE.update({"memories": [], "conversations": {}, "artifacts": {}, "sse": sse,
+    STATE.update({"memories": [], "conversations": {}, "conv_owner": {}, "artifacts": {}, "sse": sse,
                   "add_returns_ids": add_returns_ids, "calls": []})
 
 
@@ -93,8 +93,13 @@ def _tool(name, a):
     if name == "conversation_create":
         cid = uuid.uuid4().hex
         STATE["conversations"][cid] = []
+        STATE["conv_owner"][cid] = a.get("agent_id")
         return {"id": cid, "agent_id": a.get("agent_id"), "title": a.get("title")}
     if name == "conversation_add_message":
+        owner = STATE["conv_owner"].get(a["conversation_id"])
+        if owner is not None and owner != a.get("agent_id"):  # real Meko: a normal result, not isError
+            return {"error": "agent_id_mismatch",
+                    "detail": f"Conversation {a['conversation_id']} belongs to agent '{owner}'"}
         STATE["conversations"].setdefault(a["conversation_id"], []).append(a)
         return {"ok": True}
     if name == "artifact_put":

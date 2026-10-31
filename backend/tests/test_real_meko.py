@@ -1,6 +1,7 @@
 """The REAL Meko code path (MCP client + RealMeko parsing) against a mock Meko server.
 Proves the protocol handling and the OFF vs ON flow before anyone plugs in a real key."""
 import asyncio
+import json
 import os
 
 os.environ.update({"MEKO_MODE": "fake", "LLM_MODE": "fake", "CHECK_SECONDS": "0.3",
@@ -57,6 +58,9 @@ def test_off_vs_on_through_real_meko_path(sse):
     assert on.lesson_ids                                              # lesson stored with a real id
     assert "context_search" in mock_meko.STATE["calls"]
     assert any(i.source == "knowledge_base" for i in on.recall.items)  # seeded lessons are promoted
+    traces = mock_meko.STATE["conversations"][on.conversation_id]       # decision traces reached Meko
+    assert {json.loads(t["metadata"])["decided_by"] for t in traces} >= {"triage", "recall", "fixer"}
+    assert all(e["ok"] for e in memory.log if e["op"] == "decision_trace")
 
 
 def test_correct_forget_promote_use_real_ids_and_writer_agent():
@@ -93,6 +97,50 @@ def test_memory_add_without_ids_finds_the_real_id():
     inc = asyncio.run(run_incident(True))
     real_ids = {m["id"] for m in mock_meko.STATE["memories"]}
     assert inc.lesson_ids and set(inc.lesson_ids) <= real_ids
+
+
+def test_reset_right_after_resolved_still_saves_the_lesson():
+    """A demo reset cancels the running fix. Once the fix is checked, its lesson must still reach Meko."""
+    use_mock()
+    real = httpx.ASGITransport(app=mock_meko.app)
+
+    async def slow_meko(request):
+        if b'"memory_add"' in request.content:
+            await asyncio.sleep(0.5)
+        return await real.handle_async_request(request)
+
+    memory.backend.client.transport = httpx.MockTransport(slow_meko)
+
+    async def go():
+        memory.enabled = True
+        await shop.chaos("db_pool")
+        inc = await orch_mod.orchestrator.watch_once()
+        task = asyncio.create_task(orch_mod.orchestrator.decide(inc.id, "apply"))
+        while inc.status != "resolved":
+            await asyncio.sleep(0.05)
+        task.cancel()  # what POST /api/demo/reset does to a running fix
+        await asyncio.gather(task, return_exceptions=True)
+        await asyncio.gather(*orch_mod.orchestrator._learning)
+        return inc
+
+    inc = asyncio.run(go())
+    assert inc.lesson_ids and set(inc.lesson_ids) <= {m["id"] for m in mock_meko.STATE["memories"]}
+
+
+def test_one_dropped_connection_is_retried():
+    use_mock()
+    real = httpx.ASGITransport(app=mock_meko.app)
+    drops = []
+
+    async def flaky(request):
+        if not drops:  # the first request never reaches Meko
+            drops.append(1)
+            raise httpx.ConnectError("network blip", request=request)
+        return await real.handle_async_request(request)
+
+    memory.backend.client.transport = httpx.MockTransport(flaky)
+    items = asyncio.run(memory.backend.search("checkout DB connections run out", "recall"))
+    assert drops and items
 
 
 def test_meko_down_keeps_incident_moving_and_queues_writes():

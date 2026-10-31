@@ -22,6 +22,15 @@ class Orchestrator:
     def __init__(self):
         self.armed = True
         self._watch_task: asyncio.Task | None = None
+        self._learning: set[asyncio.Task] = set()  # lessons being saved (held so they are not GC'd)
+
+    async def _learn(self, inc: Incident) -> None:
+        """Save the lesson. The fix has finished by now, so the lesson is real: a demo reset that
+        cancels this fix (it drops half-checked fixes) must not cut the save off halfway."""
+        task = asyncio.ensure_future(scribe.learn(inc))
+        self._learning.add(task)
+        task.add_done_callback(self._learning.discard)
+        await asyncio.shield(task)
 
     # ---- opening and analysing -------------------------------------------------
     async def open_incident(self, metrics: dict) -> Incident:
@@ -91,7 +100,7 @@ class Orchestrator:
                     "recall": inc.recall.model_dump() if inc.recall else None}
         if choice == "escalate":
             self._escalate(inc, f"{by} escalated to a senior")
-            await scribe.learn(inc)
+            await self._learn(inc)
             return {"status": inc.status}
         if inc.status != "waiting_human" or not inc.proposed_action:
             return {"status": inc.status, "note": "nothing to apply right now"}
@@ -113,11 +122,11 @@ class Orchestrator:
         if ok:
             inc.status, inc.resolved_at = "resolved", time.time()
             inc.log("system", f"Resolved in {inc.time_to_fix_s}s")
-            await scribe.learn(inc)
+            await self._learn(inc)
             return
         if len(inc.attempts) >= settings.max_fix_attempts:
             self._escalate(inc, f"{len(inc.attempts)} fixes failed")
-            await scribe.learn(inc)
+            await self._learn(inc)
             return
         await self._propose(inc, await shop.metrics(), await shop.logs(20))
 
