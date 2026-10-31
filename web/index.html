@@ -1,0 +1,139 @@
+<!doctype html>
+<!-- Starter page that already works end to end. Teammate C: restyle and improve freely,
+     but keep using only the API endpoints from the shared contract. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FixOnce</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#15171a; --muted:#5d6470; --line:#e1e4e8; --accent:#2f6fec; --good:#1f8a4c; --bad:#c43b2f; --warn:#a96a00; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.45 system-ui, -apple-system, Segoe UI, sans-serif; background:var(--bg); color:var(--ink); }
+  header { display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; padding:14px 20px; background:var(--card); border-bottom:1px solid var(--line); }
+  h1 { margin:0; font-size:20px; } h1 small { color:var(--muted); font-weight:400; font-size:13px; }
+  main { display:grid; grid-template-columns: minmax(0,380px) minmax(0,1fr); gap:16px; padding:16px 20px; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; }
+  .card h2 { margin:0 0 8px; font-size:14px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+  button { font:inherit; border:1px solid var(--line); background:#fff; border-radius:8px; padding:6px 10px; cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .switch { display:flex; align-items:center; gap:8px; font-weight:600; }
+  .switch button { min-width:90px; }
+  .on { color:var(--good); } .off { color:var(--bad); }
+  .phone { border:2px solid var(--ink); border-radius:22px; padding:16px; min-height:240px; }
+  .phone .title { font-weight:700; margin-bottom:6px; }
+  .tag { display:inline-block; font-size:12px; padding:1px 8px; border-radius:99px; background:#eef1f5; color:var(--muted); }
+  .tag.bad { background:#fbe9e7; color:var(--bad);} .tag.good { background:#e5f4ea; color:var(--good);} .tag.warn { background:#fdf1dc; color:var(--warn);}
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+  .item { border-top:1px solid var(--line); padding:8px 0; }
+  .item:first-child { border-top:0; }
+  .muted { color:var(--muted); font-size:13px; }
+  .log { max-height:260px; overflow:auto; font:12px/1.4 ui-monospace, Menlo, monospace; }
+  textarea, input[type=text] { width:100%; font:inherit; padding:6px; border:1px solid var(--line); border-radius:8px; }
+  .grid2 { display:grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap:16px; }
+  @media (max-width: 860px) { .grid2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>FixOnce <small>every incident, fixed only once</small></h1>
+  <div class="switch">Meko memory: <span id="mekoState">…</span> <button id="mekoBtn">Toggle</button></div>
+  <div class="row" style="margin:0">
+    <span class="muted">Simulation:</span>
+    <button data-chaos="db_pool">Break: DB connections</button>
+    <button data-chaos="bad_deploy">Break: bad deploy</button>
+    <button data-chaos="memory_leak">Break: memory leak</button>
+    <button data-chaos="sale_on">Sale ON</button>
+    <button id="resetBtn">Reset demo</button>
+  </div>
+</header>
+<main>
+  <section>
+    <div class="card phone" id="phone"><div class="muted">All quiet. Break something (simulation) to see an alert.</div></div>
+    <div class="card" style="margin-top:16px">
+      <h2>Ask about last night</h2>
+      <input type="text" id="askInput" value="What happened last night?">
+      <div class="row"><button id="askBtn">Ask</button></div>
+      <div id="askOut" class="muted" style="white-space:pre-wrap;margin-top:8px"></div>
+    </div>
+  </section>
+  <section style="display:grid;gap:16px">
+    <div class="card"><h2>What Meko recalled and stored for this incident</h2><div id="context" class="muted">No incident yet.</div></div>
+    <div class="grid2">
+      <div class="card"><h2>Timeline</h2><div id="timeline" class="log"></div></div>
+      <div class="card"><h2>Incidents and time to fix</h2><div id="incidents"></div></div>
+    </div>
+    <div class="card"><h2>Every Meko call (live)</h2><div id="mekolog" class="log"></div></div>
+  </section>
+</main>
+<script>
+const $ = (s) => document.querySelector(s);
+const api = async (path, opts = {}) => {
+  const r = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
+  return r.json();
+};
+const LABEL = { pause_batch_job: "Pause the batch/export job", raise_pool_size: "Raise the DB pool size",
+  scale_up: "Add more replicas", rollback_last_deploy: "Roll back the last deploy", restart_service: "Restart the service" };
+let current = null;
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const time = (t) => new Date(t * 1000).toLocaleTimeString();
+
+async function refresh() {
+  const st = await api("/api/status");
+  $("#mekoState").innerHTML = st.meko_enabled ? '<span class="on">ON</span>' : '<span class="off">OFF</span>';
+  $("#mekoState").dataset.on = st.meko_enabled;
+  const list = await api("/incidents");
+  current = list[0] || null;
+  renderPhone(current);
+  $("#incidents").innerHTML = list.map((i) => `<div class="item"><b>${esc(i.service)}</b> <span class="tag ${i.status === "resolved" ? "good" : i.status === "escalated" ? "bad" : ""}">${i.status}</span>
+    <span class="tag">${i.meko_enabled ? "Meko ON" : "Meko OFF"}</span><div class="muted">${esc(i.signature)}</div>
+    <div class="muted">Tries: ${i.attempts.map((a) => `${a.action} (${a.result})`).join(", ") || "none"} · time to fix: ${i.time_to_fix_s ?? "-"} s</div></div>`).join("") || '<div class="muted">None yet.</div>';
+  $("#timeline").innerHTML = current ? current.timeline.slice().reverse().map((e) => `<div>${time(e.t)} <b>${esc(e.who)}</b>: ${esc(e.what)}</div>`).join("") : "";
+  if (current) renderContext(await api(`/incidents/${current.id}/context`));
+  const log = await api("/api/meko/log?limit=40");
+  $("#mekolog").innerHTML = log.slice().reverse().map((e) => `<div>${time(e.t)} <b>${esc(e.agent)}</b> ${esc(e.op)} ${e.ok ? "" : "⚠"} ${esc(e.note)}</div>`).join("") || "No Meko calls yet.";
+}
+
+function renderPhone(i) {
+  if (!i) return;
+  const r = i.recall || {};
+  const seen = r.match ? `<span class="tag good">Seen before · ${Math.round((r.confidence || 0) * 100)}% sure</span>` : (r.meko_enabled ? '<span class="tag">Not seen before</span>' : '<span class="tag bad">No memory (Meko OFF)</span>');
+  const stale = r.stale ? `<div class="tag warn">Learned on ${esc(r.learned_on_version)}, now ${esc(i.version)}: may be outdated</div>` : "";
+  const worse = (r.failed || []).length ? `<div class="muted">Made it worse before: ${r.failed.map((a) => LABEL[a]).join(", ")}</div>` : "";
+  const buttons = i.status === "waiting_human" ? `<div class="row"><button class="primary" onclick="decide('apply')">Apply: ${esc(LABEL[i.proposed_action])}</button><button onclick="decide('why')">Why?</button><button onclick="decide('escalate')">Escalate</button></div>` : "";
+  $("#phone").innerHTML = `<div class="title">${esc(i.service)} is failing</div><div>${esc(i.summary)}</div><div class="row">${seen}</div>${stale}${worse}
+    ${i.blocked_reason ? `<div class="tag warn" style="margin-top:6px">${esc(i.blocked_reason)}</div>` : ""}
+    ${i.proposed_action ? `<p><b>Suggested:</b> ${esc(LABEL[i.proposed_action])}<br><span class="muted">${esc(i.proposal_reason)}</span></p>` : ""}
+    <div>Status: <b>${i.status}</b></div>${buttons}<div id="why" class="muted"></div>`;
+}
+
+function renderContext(c) {
+  const rec = c.recalled.map((m) => `<div class="item"><span class="tag">recalled · score ${m.score ?? "-"}</span> ${esc(m.text)}</div>`).join("");
+  const sto = c.stored.map((m) => `<div class="item"><span class="tag good">stored</span> ${esc(m.text)}
+      ${m.id ? `<div class="row"><button onclick="promote('${m.id}')">Fix held: promote to team</button><button onclick="correct('${m.id}')">Correct</button><button onclick="forget('${m.id}')">Forget</button></div>` : ""}</div>`).join("");
+  $("#context").innerHTML = (c.meko_enabled ? "" : '<div class="tag bad">Meko was OFF for this incident: nothing recalled, nothing stored.</div>') + (rec || "") + (sto || "") || "Nothing recalled or stored.";
+}
+
+async function decide(choice) {
+  if (!current) return;
+  if (choice === "why") {
+    const w = await api(`/incidents/${current.id}/decision`, { method: "POST", body: JSON.stringify({ choice }) });
+    $("#why").textContent = `${w.reason} ${w.blocked || ""}`;
+    return;
+  }
+  api(`/incidents/${current.id}/decision`, { method: "POST", body: JSON.stringify({ choice, by: "on-call" }) });
+  setTimeout(refresh, 300);
+}
+async function promote(id) { await api(`/lessons/${id}/promote`, { method: "POST", body: JSON.stringify({ confirmed_by: "on-call" }) }); refresh(); }
+async function forget(id) { await api(`/lessons/${id}`, { method: "DELETE" }); refresh(); }
+async function correct(id) { const text = prompt("Corrected lesson text:"); if (text) { await api(`/lessons/${id}/correct`, { method: "POST", body: JSON.stringify({ text }) }); refresh(); } }
+
+$("#mekoBtn").onclick = async () => { await api("/settings/meko", { method: "POST", body: JSON.stringify({ enabled: $("#mekoState").dataset.on !== "true" }) }); refresh(); };
+document.querySelectorAll("[data-chaos]").forEach((b) => (b.onclick = () => api(`/chaos/${b.dataset.chaos}`, { method: "POST" })));
+$("#resetBtn").onclick = async () => { await api("/api/demo/reset", { method: "POST" }); refresh(); };
+$("#askBtn").onclick = async () => { const r = await api("/ask", { method: "POST", body: JSON.stringify({ question: $("#askInput").value }) }); $("#askOut").textContent = r.answer; };
+refresh(); setInterval(refresh, 1500);
+</script>
+</body>
+</html>
