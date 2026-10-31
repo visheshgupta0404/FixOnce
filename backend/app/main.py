@@ -63,10 +63,23 @@ async def metrics():
 
 @app.post("/api/demo/reset")
 async def demo_reset():
-    """Reset the shop and incidents between demo runs. Memory in Meko is kept."""
+    """Reset the shop and incidents between demo runs. Memory in Meko is kept.
+
+    Stops the watcher and any fix being checked first: a watcher tick that read the old, broken
+    metrics would otherwise open a stale incident right after the reset, and a half-checked fix
+    would finish and store a lesson."""
+    stopping = list(fixing.values())
+    if orchestrator._watch_task:
+        stopping.append(orchestrator._watch_task)
+        orchestrator._watch_task = None
+    for task in stopping:
+        task.cancel()
+    await asyncio.gather(*stopping, return_exceptions=True)
     await shop.reset()
     store.clear()
     orchestrator.armed = True
+    if settings.watch_interval_s > 0:
+        orchestrator.start()
     return {"ok": True}
 
 
