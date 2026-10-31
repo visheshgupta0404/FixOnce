@@ -31,6 +31,9 @@ Open http://localhost:8000. With no keys in `.env`, it runs offline with a fake 
 rule-based model (for development only; the demo uses real Meko and Gemini). `GET /api/status`
 says which one is running.
 
+On a slow network the first build can take 15+ minutes; if pip times out, run
+`docker compose up --build -d` again and it resumes from the wheels it already downloaded.
+
 Only port 8000 is published. The demo shop listens on 127.0.0.1:8001 for debugging.
 
 Between demo runs: `scripts/demo_reset.sh` (shop healthy, incidents cleared, Meko OFF; lessons in
