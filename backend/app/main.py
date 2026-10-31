@@ -1,6 +1,7 @@
 """FixOnce backend API. Endpoints follow the shared contract in the war-plan doc."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -19,6 +20,7 @@ from .shop_client import shop
 from .store import store
 
 logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("fixonce.api")
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
 
 
@@ -99,12 +101,31 @@ def incident_context(incident_id: str):
     }
 
 
+fixing: dict[str, asyncio.Task] = {}  # incident id -> running apply (held so it is not GC'd)
+
+
+def _apply_done(incident_id: str, task: asyncio.Task) -> None:
+    fixing.pop(incident_id, None)
+    if not task.cancelled() and task.exception():
+        log.error("apply for %s failed", incident_id, exc_info=task.exception())
+
+
 @app.post("/incidents/{incident_id}/decision")
 async def decision(incident_id: str, body: Decision):
-    try:
-        return await orchestrator.decide(incident_id, body.choice, body.by)
-    except KeyError:
+    """"apply" returns at once and checks the fix in the background; the page polls the incident."""
+    inc = store.get(incident_id)
+    if not inc:
         raise HTTPException(404, "no such incident")
+    if body.choice != "apply":
+        return await orchestrator.decide(incident_id, body.choice, body.by)
+    if incident_id in fixing:
+        return {"status": "fixing"}
+    if inc.status != "waiting_human" or not inc.proposed_action:
+        return {"status": inc.status, "note": "nothing to apply right now"}
+    task = asyncio.create_task(orchestrator.decide(incident_id, "apply", body.by))
+    fixing[incident_id] = task
+    task.add_done_callback(lambda t: _apply_done(incident_id, t))
+    return {"status": "fixing"}
 
 
 # ---- Meko switch and lessons ----
