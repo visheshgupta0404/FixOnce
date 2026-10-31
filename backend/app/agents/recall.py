@@ -53,6 +53,11 @@ async def recall(incident: Incident, current_version: str) -> RecallResult:
     for it in items:
         if it.score is not None and float(it.score if it.score <= 1 else it.score / 10) < floor:
             continue
+        if it.source == "conversation":
+            # Decision traces of past incidents ("match=True worked=[...] failed=[...]") come back from
+            # context_search too. They are shown in the panel, but they are not lessons: parsing them
+            # as text marks every action named on the line as failed, including the fix that worked.
+            continue
         meta = it.metadata or {}
         w = meta.get("worked") or []
         f = meta.get("failed") or []
