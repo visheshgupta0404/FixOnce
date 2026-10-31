@@ -24,10 +24,33 @@ class Orchestrator:
         self.armed = True
         self._watch_task: asyncio.Task | None = None
         self._learning: set[asyncio.Task] = set()  # lessons being saved (held so they are not GC'd)
+        self._traces: dict[str, asyncio.Task] = {}  # incident id -> last background Meko write, in order
+
+    def _background(self, inc: Incident, write) -> None:
+        """Run a Meko write that the on-call does not wait for (the conversation, decision traces),
+        after the previous one for this incident, so traces keep their order."""
+        prev = self._traces.get(inc.id)
+
+        async def run():
+            if prev:
+                await asyncio.gather(prev, return_exceptions=True)
+            await write()
+        self._traces[inc.id] = asyncio.ensure_future(run())
+
+    def _trace(self, inc: Incident, agent: str, input: str, output: str, reasoning: str,
+               plan: list[str] | None = None) -> None:
+        self._background(inc, lambda: memory.log_decision(inc.conversation_id, agent, input, output, reasoning, plan))
+
+    async def _written(self, inc: Incident) -> None:
+        """Wait for this incident's background writes (the lesson needs its conversation id)."""
+        task = self._traces.get(inc.id)
+        if task:
+            await asyncio.gather(task, return_exceptions=True)
 
     async def _learn(self, inc: Incident) -> None:
         """Save the lesson. The fix has finished by now, so the lesson is real: a demo reset that
         cancels this fix (it drops half-checked fixes) must not cut the save off halfway."""
+        await self._written(inc)
         task = asyncio.ensure_future(scribe.learn(inc))
         self._learning.add(task)
         task.add_done_callback(self._learning.discard)
@@ -39,7 +62,9 @@ class Orchestrator:
                        meko_enabled=memory.enabled, simulation=target.simulation)
         inc.log("watcher", f"Error rate {round(metrics.get('error_rate', 0) * 100)}%: opened incident")
         store.save(inc)
-        inc.conversation_id = await memory.start_conversation(f"Incident {inc.id} on {inc.service}")
+        async def start():
+            inc.conversation_id = await memory.start_conversation(f"Incident {inc.id} on {inc.service}")
+        self._background(inc, start)  # triage does not wait for Meko to open the conversation
         await self.analyse(inc, metrics)
         return inc
 
@@ -54,8 +79,8 @@ class Orchestrator:
             return self._escalate(inc, f"Triage failed: {e}")
         inc.signature, inc.summary = t["signature"], t["summary"]
         inc.log("triage", inc.summary)
-        await memory.log_decision(inc.conversation_id, "triage", "metrics + logs", inc.signature,
-                                  "Grouped the alerts into one incident and named its pattern.")
+        self._trace(inc, "triage", "metrics + logs", inc.signature,
+                    "Grouped the alerts into one incident and named its pattern.")
 
         inc.recall = await recall_agent.recall(inc, metrics.get("version", ""))
         r = inc.recall
@@ -69,9 +94,8 @@ class Orchestrator:
                     + (f" Learned on {r.learned_on_version}, now {inc.version}: may be outdated." if r.stale else ""))
         else:
             inc.log("recall", f"No strong match in memory (confidence {r.confidence}); slow path")
-        await memory.log_decision(inc.conversation_id, "recall", inc.signature,
-                                  f"match={r.match} worked={r.worked} failed={r.failed}",
-                                  "Asked Meko before any reasoning.")
+        self._trace(inc, "recall", inc.signature, f"match={r.match} worked={r.worked} failed={r.failed}",
+                    "Asked Meko before any reasoning.")
         await self._propose(inc, metrics, logs)
 
     async def _propose(self, inc: Incident, metrics: dict, logs: list[dict]) -> None:
@@ -88,8 +112,8 @@ class Orchestrator:
         inc.proposed_action, inc.proposal_reason = p["action"], p["reason"]
         inc.status = "waiting_human"
         inc.log("fixer", f"Proposes: {ACTION_LABELS[p['action']]}. {p['reason']}")
-        await memory.log_decision(inc.conversation_id, "fixer", inc.signature, p["action"], p["reason"],
-                                  [f"used memory {m}" for m in p.get("used_memory_ids", [])])
+        self._trace(inc, "fixer", inc.signature, p["action"], p["reason"],
+                    [f"used memory {m}" for m in p.get("used_memory_ids", [])])
         notifier.emit("incident.proposed", inc)
 
     # ---- human decisions ---------------------------------------------------------
@@ -120,7 +144,7 @@ class Orchestrator:
         attempt.result = "worked" if ok else "failed"
         attempt.note = f"error rate after {settings.check_seconds:.0f}s: {round(rate * 100)}%"
         inc.log("watcher", f"{ACTION_LABELS[action]} {'worked' if ok else 'did NOT work'} ({attempt.note})")
-        await memory.log_decision(inc.conversation_id, "fixer", action, attempt.result, attempt.note)
+        self._trace(inc, "fixer", action, attempt.result, attempt.note)
         if ok:
             inc.status, inc.resolved_at = "resolved", time.time()
             inc.log("system", f"Resolved in {inc.time_to_fix_s}s")
