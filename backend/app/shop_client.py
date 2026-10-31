@@ -10,6 +10,9 @@ class ShopClient:
     def __init__(self, base_url: str | None = None, transport: httpx.AsyncBaseTransport | None = None):
         self.base_url = base_url or settings.shop_url
         self.transport = transport  # tests pass an ASGI transport
+        if self.base_url == "inprocess":  # one-container deploys (Render): the shop runs inside this process
+            from shop.app import app as shop_app
+            self.base_url, self.transport = "http://shop", httpx.ASGITransport(app=shop_app)
 
     def _client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(base_url=self.base_url, transport=self.transport, timeout=10)

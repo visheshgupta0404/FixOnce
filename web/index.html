@@ -45,8 +45,10 @@
     <button data-chaos="bad_deploy">Break: bad deploy</button>
     <button data-chaos="memory_leak">Break: memory leak</button>
     <button data-chaos="sale_on">Sale ON</button>
+    <button data-chaos="sale_off">Sale OFF</button>
     <button id="resetBtn">Reset demo</button>
   </div>
+  <div id="backendState" class="muted" style="flex-basis:100%"></div>
 </header>
 <main>
   <section>
@@ -59,7 +61,8 @@
     </div>
   </section>
   <section style="display:grid;gap:16px">
-    <div class="card"><h2>What Meko recalled and stored for this incident</h2><div id="context" class="muted">No incident yet.</div></div>
+    <div class="card"><h2>What Meko recalled and stored for this incident</h2><div id="notice"></div><div id="context" class="muted">No incident yet.</div></div>
+    <div class="card"><h2>Shared team knowledge (promoted in Meko)</h2><div id="team" class="muted">Loading…</div></div>
     <div class="grid2">
       <div class="card"><h2>Timeline</h2><div id="timeline" class="log"></div></div>
       <div class="card"><h2>Incidents and time to fix</h2><div id="incidents"></div></div>
@@ -83,6 +86,9 @@ async function refresh() {
   const st = await api("/api/status");
   $("#mekoState").innerHTML = st.meko_enabled ? '<span class="on">ON</span>' : '<span class="off">OFF</span>';
   $("#mekoState").dataset.on = st.meko_enabled;
+  $("#backendState").innerHTML = `Memory: ${st.meko_backend === "meko" ? "real Meko" : '<span class="tag bad">offline stand-in, not Meko</span>'}
+    · Model: ${esc(st.llm)}${st.pending_writes ? ` · <span class="tag warn">${st.pending_writes} Meko writes waiting to retry</span>` : ""}
+    · The shop and the Break buttons are a simulation.`;
   const list = await api("/incidents");
   current = list[0] || null;
   renderPhone(current);
@@ -108,11 +114,30 @@ function renderPhone(i) {
     <div>Status: <b>${i.status}</b></div>${buttons}<div id="why" class="muted"></div>`;
 }
 
+const SOURCE = { memory: "memory", knowledge_base: "shared team knowledge", conversation: "past conversation" };
+const score = (s) => (s == null ? "-" : Number(s).toFixed(2));
+let editing = null;  // id of the lesson being corrected; pauses re-rendering of the panel
+
 function renderContext(c) {
-  const rec = c.recalled.map((m) => `<div class="item"><span class="tag">recalled · score ${m.score ?? "-"}</span> ${esc(m.text)}</div>`).join("");
-  const sto = c.stored.map((m) => `<div class="item"><span class="tag good">stored</span> ${esc(m.text)}
-      ${m.id ? `<div class="row"><button onclick="promote('${m.id}')">Fix held: promote to team</button><button onclick="correct('${m.id}')">Correct</button><button onclick="forget('${m.id}')">Forget</button></div>` : ""}</div>`).join("");
+  if (editing) return;
+  const rec = c.recalled.map((m) => `<div class="item"><span class="tag">recalled from ${SOURCE[m.source] || esc(m.source)} · score ${score(m.score)}</span>
+      ${m.promoted ? '<span class="tag good">promoted</span>' : ""} ${esc(m.text)}</div>`).join("");
+  const sto = c.stored.map((m) => `<div class="item"><span class="tag good">stored</span>
+      ${m.promoted ? '<span class="tag good">promoted: shared team knowledge, locked</span>' : ""} <span id="text-${esc(m.id)}">${esc(m.text)}</span>
+      ${m.id && !m.promoted ? `<div class="row"><button onclick="promote('${esc(m.id)}')">Fix held: promote to team</button><button onclick="correct('${esc(m.id)}')">Correct</button><button onclick="forget('${esc(m.id)}')">Forget</button></div>` : ""}
+      ${m.id && m.promoted ? '<div class="muted">Meko makes promotion one-way, so a promoted lesson can no longer be corrected or forgotten.</div>' : ""}</div>`).join("");
   $("#context").innerHTML = (c.meko_enabled ? "" : '<div class="tag bad">Meko was OFF for this incident: nothing recalled, nothing stored.</div>') + (rec || "") + (sto || "") || "Nothing recalled or stored.";
+}
+
+async function renderTeam() {
+  const rows = await api("/lessons?promoted=true");
+  const off = $("#mekoState").dataset.on === "false";
+  $("#team").innerHTML = rows.map((m) => `<div class="item">${esc(m.text)}</div>`).join("")
+    || (off ? "Meko is OFF: shared knowledge is not read." : "Nothing promoted yet.");
+}
+
+function notice(r) {
+  $("#notice").innerHTML = r && r.error ? `<div class="tag bad" style="margin-bottom:8px">${esc(r.error)}</div>` : "";
 }
 
 async function decide(choice) {
@@ -125,15 +150,30 @@ async function decide(choice) {
   api(`/incidents/${current.id}/decision`, { method: "POST", body: JSON.stringify({ choice, by: "on-call" }) });
   setTimeout(refresh, 300);
 }
-async function promote(id) { await api(`/lessons/${id}/promote`, { method: "POST", body: JSON.stringify({ confirmed_by: "on-call" }) }); refresh(); }
-async function forget(id) { await api(`/lessons/${id}`, { method: "DELETE" }); refresh(); }
-async function correct(id) { const text = prompt("Corrected lesson text:"); if (text) { await api(`/lessons/${id}/correct`, { method: "POST", body: JSON.stringify({ text }) }); refresh(); } }
+async function promote(id) {
+  notice(await api(`/lessons/${id}/promote`, { method: "POST", body: JSON.stringify({ confirmed_by: "on-call" }) }));
+  refresh(); renderTeam();
+}
+async function forget(id) { notice(await api(`/lessons/${id}`, { method: "DELETE" })); refresh(); }
+function correct(id) {
+  editing = id;
+  const span = document.getElementById(`text-${id}`);
+  span.innerHTML = `<textarea id="edit-${esc(id)}" rows="3">${esc(span.textContent)}</textarea>
+    <div class="row"><button class="primary" onclick="saveCorrection('${esc(id)}')">Save correction</button><button onclick="editing = null; refresh()">Cancel</button></div>`;
+}
+async function saveCorrection(id) {
+  const text = document.getElementById(`edit-${id}`).value.trim();
+  editing = null;
+  if (text) notice(await api(`/lessons/${id}/correct`, { method: "POST", body: JSON.stringify({ text }) }));
+  refresh();
+}
 
-$("#mekoBtn").onclick = async () => { await api("/settings/meko", { method: "POST", body: JSON.stringify({ enabled: $("#mekoState").dataset.on !== "true" }) }); refresh(); };
+$("#mekoBtn").onclick = async () => { await api("/settings/meko", { method: "POST", body: JSON.stringify({ enabled: $("#mekoState").dataset.on !== "true" }) }); await refresh(); renderTeam(); };
 document.querySelectorAll("[data-chaos]").forEach((b) => (b.onclick = () => api(`/chaos/${b.dataset.chaos}`, { method: "POST" })));
 $("#resetBtn").onclick = async () => { await api("/api/demo/reset", { method: "POST" }); refresh(); };
 $("#askBtn").onclick = async () => { const r = await api("/ask", { method: "POST", body: JSON.stringify({ question: $("#askInput").value }) }); $("#askOut").textContent = r.answer; };
 refresh(); setInterval(refresh, 1500);
+renderTeam(); setInterval(renderTeam, 15000);  // one Meko call each time, so not every tick
 </script>
 </body>
 </html>

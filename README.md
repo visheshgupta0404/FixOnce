@@ -17,16 +17,32 @@ same wrong step gets tried again.
 
 ## Run it (5 commands)
 
+Needs only Git and Docker (Docker Desktop running on Windows/macOS). Works the same in bash and PowerShell.
+
 ```bash
 git clone https://github.com/visheshgupta0404/FixOnce.git
 cd FixOnce
 cp .env.example .env          # add MEKO_API_KEY, MEKO_DATAPACK_ID, GEMINI_API_KEY
 docker compose up --build -d
-docker compose exec backend python -m app.seed   # seeded demo history, written into Meko
+docker compose exec backend python -m app.seed   # seeded demo history, written into Meko (once per datapack)
 ```
 
 Open http://localhost:8000. With no keys in `.env`, it runs offline with a fake memory and a
-rule-based model (for development only; the demo uses real Meko and Gemini).
+rule-based model (for development only; the demo uses real Meko and Gemini). `GET /api/status`
+says which one is running.
+
+On a slow network the first build can take 15+ minutes; if pip times out, run
+`docker compose up --build -d` again and it resumes from the wheels it already downloaded.
+
+Only port 8000 is published. The demo shop listens on 127.0.0.1:8001 for debugging.
+
+Between demo runs: `scripts/demo_reset.sh` (shop healthy, incidents cleared, Meko OFF; lessons in
+Meko are kept). `scripts/demo_smoke.sh` runs the Meko OFF vs ON flow through the API and prints PASS.
+Both take `FIXONCE_URL=<url>` to point at the hosted copy.
+
+Free hosting (Render): New > Blueprint > this repo, enter the three keys when asked. `render.yaml`
+uses the one-container `Dockerfile` at the root (the shop runs inside the backend process).
+Free instances sleep after 15 idle minutes, so point a free uptime monitor at `/api/status`.
 
 ## Try it
 

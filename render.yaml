@@ -1,0 +1,32 @@
+# Free hosting on Render: New > Blueprint > this repo. Render asks for the three secrets below
+# (they are never stored in the repo). Uses the one-container Dockerfile at the repo root.
+services:
+  - type: web
+    name: fixonce
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/status
+    envVars:
+      - key: MEKO_API_KEY
+        sync: false
+      - key: MEKO_DATAPACK_ID
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: MEKO_MCP_URL
+        value: https://mcp.mekodata.ai/mcp
+      - key: MEKO_ENABLED
+        value: "true"
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: CHECK_SECONDS
+        value: "8"
+      - key: STORM_SECONDS
+        value: "20"
+      - key: WATCH_INTERVAL_SECONDS
+        value: "3"
+      - key: ERROR_THRESHOLD
+        value: "0.05"
+      - key: FAST_PATH_CONFIDENCE
+        value: "0.6"

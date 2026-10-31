@@ -116,13 +116,20 @@ class MekoMCP:
         result = await self._rpc("tools/call", {"name": tool, "arguments": args})
         if result.get("isError"):
             raise MekoError(f"{tool}: {_text_of(result)[:300]}")
-        if result.get("structuredContent") is not None:
-            return result["structuredContent"]
-        text = _text_of(result)
-        try:
-            return json.loads(text)
-        except (json.JSONDecodeError, TypeError):
-            return text
+        structured = result.get("structuredContent")
+        # Meko wraps every payload as {"result": "<json text>"}; unwrap it to the real JSON.
+        if isinstance(structured, dict) and set(structured) == {"result"} and isinstance(structured["result"], str):
+            return _json_or_text(structured["result"])
+        if structured is not None:
+            return structured
+        return _json_or_text(_text_of(result))
+
+
+def _json_or_text(text: str) -> Any:
+    try:
+        return json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        return text
 
 
 def _text_of(result: dict) -> str:

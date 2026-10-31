@@ -13,7 +13,7 @@ from typing import Any
 
 from ..config import settings
 from ..models import MemoryItem
-from .backends import FakeMeko, RealMeko
+from .backends import FakeMeko, LessonLocked, RealMeko
 
 
 class MemoryService:
@@ -46,6 +46,9 @@ class MemoryService:
             result = await getattr(self.backend, fn_name)(*args, **kwargs)
             self._record(op, agent, sent, _brief(result))
             return result
+        except LessonLocked as e:  # Meko said no for good: retrying never helps, so say so, don't queue
+            self._record(op, agent, sent, ok=False, note=str(e))
+            return {"ok": False, "error": str(e)}
         except Exception as e:  # Meko down: queue it, keep the incident moving
             self.pending_writes.append((fn_name, args, kwargs))
             self._record(op, agent, sent, ok=False, note=f"queued, Meko error: {e}")
