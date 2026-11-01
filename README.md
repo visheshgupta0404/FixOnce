@@ -13,7 +13,9 @@ Built at **hackCBS 9.0 · Meko challenge · Track A**.
 ![FixOnce: service health, team memory, recalled evidence and an Apply fix button](docs/ui/laptop-light.png)
 
 *Captured from the local simulation using the clearly labelled offline stand-in, not real Meko.*
-[Phone view](docs/ui/phone-light.png) · [Dark theme](docs/ui/laptop-dark.png) · [OFF vs ON comparison](docs/ui/comparison.png)
+[Phone view](docs/ui/phone-light.png) · [Dark theme](docs/ui/laptop-dark.png) · [OFF vs ON comparison](docs/ui/comparison.png) ·
+["This is the 3rd time" card](docs/ui/third-time-card.png) · [Fixed moment](docs/ui/fixed-moment.png) ·
+[What left this machine](docs/ui/egress-dark.png) · [Memory OFF](docs/ui/memory-off.png)
 
 ## Why it exists
 
@@ -36,6 +38,11 @@ The same **DB connections simulation**, observed in our offline smoke test:
 | Action | Raises the connection pool, restarts, then adds replicas | Pauses the export job |
 | Tries | 3 unsuccessful attempts | 1 successful attempt |
 | Outcome | Handed to a senior | Fixed |
+
+With **real Meko and Gemini** (1 Nov, 5 runs of the same simulation), memory OFF needed 2–3 tries every
+time, with wrong fixes first (once handed to a senior); memory ON paused the export job on the first try
+every time. In the simulation the export job logs in its own pod, so checkout's logs show only the
+symptoms: the cause is something only team memory knows.
 
 This is a reproducible development scenario, not a production benchmark or a real-Meko performance
 claim. The real-Meko demo uses lessons returned by Meko. The page shows actual attempts and time to
@@ -103,7 +110,8 @@ All Break and Sale controls are labelled **simulation** and only appear for a co
 
 1. **Run without history.** Turn team memory **OFF**, choose **Break: DB connections**, and tap
    **Apply fix** each time a proposal appears. Wait for each check. With the built-in rules,
-   three unsuccessful tries end in **Handed to a senior**.
+   three unsuccessful tries end in **Handed to a senior**. With Gemini the guesses vary: it may hand off
+   or reach the right fix on a later try, after wrong fixes.
 2. **Run with history.** Press **Reset demo**, turn memory **ON**, and break DB connections again.
    Inspect the recalled lesson and the steps that made things worse. Apply the proposed fix and
    wait until the server confirms the result. Applying normally includes an approximately
@@ -113,7 +121,7 @@ All Break and Sale controls are labelled **simulation** and only appear for a co
    this page's comparison; reloading clears the comparison. Displayed times include time spent
    waiting for human approval.
 4. **Review what was learned.** Wait for the new stored lesson. Tap **Correct**, edit inline and
-   save. Then select **Fix held: share with team**. It appears in **Shared team knowledge** on the
+   save. Then select **Promote to team**. It appears in **Shared team knowledge** on the
    next refresh and becomes locked. To demonstrate **Forget**, use another fresh, unpromoted
    lesson; do not forget the lesson you intend to promote.
 5. **Look for repeats.** When Meko returns enough matching past lessons, the orange repeat card
@@ -121,7 +129,7 @@ All Break and Sale controls are labelled **simulation** and only appear for a co
    to save that work in Meko. Open follow-ups remain visible on subsequent matching incidents;
    the quick fix and the permanent fix are separate decisions.
 6. **Inspect the evidence.** Open **What left this machine** for destination counts, masking and
-   request logs; inspect **Every Meko call** for operations and results. Ask **What happened last
+   the **Raw request log** (every Meko, Gemini, Telegram and webhook request with its result). Ask **What happened last
    night?** to get a summary from the history available to this instance.
 
 **Reset keeps lessons.** Wait for a lesson to finish saving before resetting. The reset script also
@@ -243,8 +251,8 @@ keeps lessons and defaults to memory OFF. For example in bash:
 | --- | --- |
 | Page will not open | Confirm the process or containers are running. For Docker, inspect `docker compose ps` and `docker compose logs backend`. The page uses port 8000 |
 | Offline label when real Meko was expected | Check `.env` key names and the product datapack ID; recreate containers after changing environment values (`docker compose up -d --force-recreate`) |
-| Gemini unavailable warning | Inspect the warning details and configured model/key. Built-in rules may answer while Gemini is unavailable; the page reports the fallback |
-| Saves waiting / memory unavailable | Check Meko connectivity and datapack access. Inspect the Meko call feed; wait for saves to finish before resetting |
+| Gemini unavailable warning | Hover the warning for details. `429 RESOURCE_EXHAUSTED`: the free tier allows about 20 requests per model per day and a full OFF + ON demo uses about 10, so set `GEMINI_MODEL` to another model or enable billing. `503 UNAVAILABLE`: Google is overloaded; retry later. Built-in rules answer meanwhile and the page reports the fallback |
+| Saves waiting / memory unavailable | Check Meko connectivity and datapack access. Inspect the Meko calls in **What left this machine → Raw request log**; wait for saves to finish before resetting |
 | No matching history | Confirm you seeded the dedicated demo datapack once, memory is ON, and recall calls succeeded |
 | Correct or Forget is missing | Promoted lessons are locked. Demonstrate those actions on a fresh lesson before promotion |
 | First Docker build fails while downloading | Check the connection and retry the build. Download/build time depends on your machine and network |
