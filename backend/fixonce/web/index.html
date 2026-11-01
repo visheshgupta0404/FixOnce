@@ -734,12 +734,15 @@ function countUp(root) {
     requestAnimationFrame(step)
   })
 }
+// An LLM words the signature differently each run, so pair by service + kind of failure (same groups as the fixer).
+const failureKind = s => /\b(db|database|connection|pool|sqlalchemy|postgres)/i.test(s) ? 'db' : /deploy|typeerror/i.test(s) ? 'deploy' : /memory|oom/i.test(s) ? 'memory' : s;
+const samePattern = (a, b) => a.service === b.service && (a.signature === b.signature || failureKind(a.signature) === failureKind(b.signature));
 function renderComparison(list) {
   for (const i of list) if ((i.status === 'resolved' || i.status === 'escalated') && i.signature) snapshots.set(i.id, i);
   const rows = [...snapshots.values()].sort((a, b) => b.opened_at - a.opened_at);
   let pair;
   for (const i of rows) {
-    const other = rows.find(j => j.signature === i.signature && j.meko_enabled !== i.meko_enabled);
+    const other = rows.find(j => j.meko_enabled !== i.meko_enabled && samePattern(i, j));
     if (other) { pair = i.meko_enabled ? [other, i] : [i, other]; break }
   }
   $('#comparison').hidden = !pair;
