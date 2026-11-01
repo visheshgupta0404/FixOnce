@@ -6,7 +6,8 @@ response from this service carries "simulation": true.
 
 Scenarios
   db_pool      A nightly export job holds most DB connections. Checkout times out.
-               Correct fix: pause_batch_job.
+               Correct fix: pause_batch_job. The export job runs in its own pod, so checkout's
+               logs show only the symptoms (pool exhausted, 503s), not the cause: team memory knows it.
                raise_pool_size / scale_up hit the DB connection cap -> worse.
                restart_service causes a reconnect storm -> worse for a while.
   bad_deploy   Version v1.7 ships a bug. Correct fix: rollback_last_deploy.
@@ -26,7 +27,6 @@ STORM_SECONDS = float(os.getenv("STORM_SECONDS", "20"))
 REQUESTS_PER_S = 40          # simulated checkout traffic
 SAMPLE_LINES_PER_S = 1.5     # how many access log lines per second we keep
 SYMPTOM_EVERY_S = 2.0        # a given symptom line is logged at most this often
-EXPORT_BATCHES = 90
 EXPORT_POD = "orders-export-28841720-k7x2p"
 
 app = FastAPI(title="FixOnce demo shop (simulation)")
@@ -158,10 +158,7 @@ def _tick() -> None:
         else:
             _log("INFO", f"{method} {route} 200 {_latency_ms(base)}ms req={req}")
 
-    if s["batch_job_running"]:
-        batch = min(EXPORT_BATCHES, 41 + int((now - s["batch_started"]) / 6))
-        _symptom("export", "INFO", f"export-job nightly_orders_export running, batch {batch}/{EXPORT_BATCHES}, "
-                                   f"holding 16 DB connections", EXPORT_POD)
+    if s["batch_job_running"]:  # checkout's own symptoms only (the export job logs in its own pod)
         _symptom("pool", "WARN", f"sqlalchemy.pool QueuePool limit of size {s['pool_size']} overflow 0 reached, "
                                  "connection timed out, timeout 30.00")
         if s["overloaded"]:
@@ -233,7 +230,8 @@ def chaos(kind: str):
     if kind == "db_pool":
         s["batch_job_running"] = True
         s["batch_started"] = time.time()
-        _log("INFO", "export-job nightly_orders_export started (90 batches, 16 workers)", EXPORT_POD)
+        # The export job runs in its own pod: its lines are not in checkout's logs. The on-call sees only
+        # checkout's symptoms; the cause is something only team memory knows (this is what Meko ON vs OFF shows).
     elif kind == "bad_deploy":
         s["previous_version"], s["version"] = s["version"], "v1.7"
         s["bad_deploy"] = True
