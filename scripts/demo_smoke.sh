@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# Runs the judged flow through the API: Meko OFF must fail, Meko ON must fix it first time.
+# Runs the judged flow through the API: Meko ON must fix it first time, Meko OFF must not.
+# On real Meko + Gemini each run uses about 8 Gemini requests (free tier: 20 per model per day) and leaves
+# practice lessons in Meko: clear them afterwards with scripts/forget_practice_lessons.py.
 # Usage: FIXONCE_URL=http://localhost:8000 scripts/demo_smoke.sh   (takes about a minute)
 set -euo pipefail
 URL="${FIXONCE_URL:-http://localhost:8000}"
-post() { curl -fsS -m 15 -X POST -H "Content-Type: application/json" "$URL$1" ${2:+-d "$2"}; }
+post() { curl -fsS -m 45 -X POST -H "Content-Type: application/json" "$URL$1" ${2:+-d "$2"}; }
 field() { grep -o "\"$1\":\"[^\"]*\"" | head -1 | cut -d\" -f4; }
 
 run() {  # $1 = true|false; prints the final status and the actions tried
@@ -29,4 +31,6 @@ run() {  # $1 = true|false; prints the final status and the actions tried
 off="$(run false)"; echo "Meko OFF: $off"
 on="$(run true)";   echo "Meko ON:  $on"
 post /api/demo/reset >/dev/null
-[[ "$off" == escalated* && "$on" == "resolved pause_batch_job " ]] && echo "PASS" || { echo "FAIL"; exit 1; }
+# ON must fix it first time. OFF must not: handed to a senior, or (with a real LLM guessing) fixed only after other tries.
+[[ "$on" == "resolved pause_batch_job " && "$off" != "resolved pause_batch_job " && ( "$off" == escalated* || "$off" == resolved* ) ]] \
+  && echo "PASS" || { echo "FAIL"; exit 1; }
