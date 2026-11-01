@@ -122,9 +122,9 @@ h1{font-size:20px;font-weight:750;letter-spacing:-.02em;line-height:1.15}
 .statusbar{max-width:1440px;margin:auto;padding:0 32px 12px;display:flex;align-items:center;gap:12px}
 #backendState{display:flex;flex-wrap:wrap;gap:6px;flex:1;min-width:0}
 #backendState .chip{font-size:12px;padding:3px 10px}
-.live{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);white-space:nowrap}
-.live i{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px var(--ok-bg)}
-.live.down i{background:var(--bad);box-shadow:0 0 0 3px var(--bad-bg)}
+.livebar{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);white-space:nowrap}
+.livebar i{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px var(--ok-bg)}
+.livebar.down i{background:var(--bad);box-shadow:0 0 0 3px var(--bad-bg)}
 
 /* layout */
 main{max-width:1440px;margin:auto;padding:16px 32px 32px}
@@ -500,7 +500,7 @@ textarea{min-height:120px;resize:vertical;font-size:14px;line-height:1.55}
     <div id="switchWrap" class="switch-wrap"><div class="switch-text"><b id="mekoLabel">Team memory (Meko)</b><small id="memoryHint">Checking memory settings…</small></div><button id="mekoBtn" class="switch" role="switch" aria-checked="false" aria-labelledby="mekoLabel" aria-describedby="memoryHint" disabled><span class="knob"><svg class="ic" aria-hidden="true"><use href="#i-memory"/></svg></span><span id="mekoState">…</span></button></div>
     <button id="themeBtn" class="icon-btn" aria-label="Switch theme"><svg class="ic i-sun" aria-hidden="true"><use href="#i-sun"/></svg><svg class="ic i-moon" aria-hidden="true"><use href="#i-moon"/></svg></button>
   </div>
-  <div class="statusbar"><div id="backendState"></div><span id="connection" class="live" role="status"><i></i>Connecting…</span></div>
+  <div class="statusbar"><div id="backendState"></div><span id="connection" class="livebar" role="status"><i></i>Connecting…</span></div>
 </header>
 <main>
   <div id="notice" class="notice" role="status" aria-live="polite"></div>
@@ -798,11 +798,11 @@ async function refresh() {
     renderEgress(er);
     put('#timeline', current?.timeline?.length ? `<ol class="tl">${current.timeline.slice().reverse().map(x => `<li><span class="av ${esc(x.who)}">${esc((whoLabel[x.who] || x.who || '?').slice(0, 1).toUpperCase())}</span><div><small class="num">${time(x.t)} · ${esc(whoLabel[x.who] || x.who)}</small><p>${esc(x.what)}</p></div></li>`).join('')}</ol>` : '<p class="empty">No activity yet.</p>');
     put('#incidents', list.map(i => `<div class="inc-row"><div><b>${esc(i.service)}</b> <span class="status ${statusClass[i.status] || ''}">${statusLabel[i.status] || 'Checking'}</span><p>${esc(i.summary)}</p></div><div class="inc-stats"><span class="tag ${i.meko_enabled ? 'mem' : ''}">${ic(i.meko_enabled ? 'memory' : 'off')}Memory ${i.meko_enabled ? 'ON' : 'OFF'}</span><span class="num">${tries(i.attempts.length)}</span><span class="num">${i.time_to_fix_s == null ? 'No confirmed fix' : esc(i.time_to_fix_s) + ' s to fix'}</span></div></div>`).join('') || '<p class="empty">No incidents yet.</p>');
-    $('#connection').className = 'live';
+    $('#connection').className = 'livebar';
     $('#connection').innerHTML = `<i></i>Live · updated <span class="num">${time(Date.now() / 1000)}</span>`;
     tick()
   } catch (e) {
-    $('#connection').className = 'live down';
+    $('#connection').className = 'livebar down';
     $('#connection').innerHTML = '<i></i>Connection interrupted · retrying';
     notify(e.message, true)
   } finally {
